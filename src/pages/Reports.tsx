@@ -6,7 +6,7 @@ import PageTitle from '@/components/ui/PageTitle';
 const Reports: React.FC = () => {
   return (
     <div className="space-y-6">
-      <PageTitle title="Reports" description="Generate and view financial reports" />
+      <PageTitle title="Reports" />
       
       <Card>
         <CardHeader>

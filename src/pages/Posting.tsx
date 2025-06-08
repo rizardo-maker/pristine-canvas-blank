@@ -6,7 +6,7 @@ import PageTitle from '@/components/ui/PageTitle';
 const Posting: React.FC = () => {
   return (
     <div className="space-y-6">
-      <PageTitle title="Posting" description="Manage financial postings and transactions" />
+      <PageTitle title="Posting" />
       
       <Card>
         <CardHeader>
