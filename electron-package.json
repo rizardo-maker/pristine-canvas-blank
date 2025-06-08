@@ -1,0 +1,39 @@
+
+{
+  "name": "finance-app-desktop",
+  "version": "1.0.0",
+  "description": "Finance App Desktop",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "electron:dev": "concurrently \"npm run start\" \"electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.finance.app",
+    "productName": "Finance App",
+    "directories": {
+      "output": "release/"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Finance"
+    }
+  }
+}
