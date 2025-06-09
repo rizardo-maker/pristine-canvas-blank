@@ -40,6 +40,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ onClose, collectionType }) =>
     }
 
     addPayment({
+      customerId: customer.id,
       serialNumber: formData.serialNumber,
       amount: parseFloat(formData.amount),
       date: formData.date,

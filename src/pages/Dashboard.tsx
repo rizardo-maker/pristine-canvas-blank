@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFinance } from '@/context/FinanceContext';
-import { Users, DollarSign, TrendingUp, AlertTriangle, Calendar, Map } from 'lucide/react';
+import { Users, DollarSign, TrendingUp, AlertTriangle, Calendar, Map } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
