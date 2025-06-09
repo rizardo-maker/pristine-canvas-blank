@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -31,7 +30,7 @@ interface MenuItem {
 const getBaseMenuItems = (): MenuItem[] => [
   {
     name: 'Dashboard',
-    path: '/',
+    path: '/dashboard',
     icon: <LayoutDashboard className="w-5 h-5" />,
   },
   {
