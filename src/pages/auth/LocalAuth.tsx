@@ -10,7 +10,7 @@ import { Shield, Lock, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const LocalAuth = () => {
-  const { login, setupUser, isFirstTime, isLoading } = useAuth();
+  const { signIn, setupCredentials, isFirstTime, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -53,7 +53,7 @@ const LocalAuth = () => {
           return;
         }
         
-        const success = await setupUser(formData.username, formData.password, formData.masterPassword);
+        const success = await setupCredentials(formData.username, formData.password, formData.masterPassword);
         if (success) {
           toast({
             title: "Setup Complete",
@@ -68,7 +68,7 @@ const LocalAuth = () => {
           });
         }
       } else {
-        const success = await login(formData.username, formData.password);
+        const success = await signIn(formData.username, formData.password);
         if (success) {
           toast({
             title: "Login Successful",
