@@ -69,6 +69,7 @@ const Posting = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savingProgress, setSavingProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [batchProcessor, setBatchProcessor] = useState<PaymentBatchProcessor | null>(null);
   
   useEffect(() => {
     const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
@@ -185,9 +186,9 @@ const Posting = () => {
   const handleSubmit = async () => {
     if (isSubmitting) return;
     
-    console.log('Starting payment submission with entries:', entries);
+    console.log('Starting enhanced payment submission with entries:', entries);
     
-    // Validation checks
+    // Phase 1: Pre-submission validation
     if (entries.length === 0) {
       toast.error('Please add at least one payment entry');
       return;
@@ -195,22 +196,18 @@ const Posting = () => {
     
     setIsSubmitting(true);
     setSavingProgress(0);
-    setProcessingStatus('Initializing batch processing...');
+    setProcessingStatus('Initializing enhanced batch processing...');
     
     try {
-      const loadingToastId = toast.loading(`Processing ${entries.length} payments...`);
+      const loadingToastId = toast.loading(`Processing ${entries.length} payments with enhanced system...`);
       
-      // Create batch processor
+      // Create enhanced batch processor
       const processor = new PaymentBatchProcessor();
-      setProcessingStatus('Processing payments...');
+      setBatchProcessor(processor);
+      setProcessingStatus('Starting batch validation...');
+      setSavingProgress(10);
       
-      // Process batch with progress updates
-      const updateProgress = (current: number, total: number) => {
-        const progress = Math.round((current / total) * 80); // Reserve 20% for verification
-        setSavingProgress(progress);
-      };
-      
-      let processedCount = 0;
+      // Process batch with enhanced options
       const result: BatchProcessingResult = await processor.processPaymentBatch(
         entries,
         {
@@ -220,15 +217,23 @@ const Posting = () => {
         },
         (payment) => {
           addPayment(payment);
-          processedCount++;
-          updateProgress(processedCount, entries.length);
+          const currentProgress = Math.min(80, (processor.getBatchStats().totalProcessed / entries.length) * 70 + 10);
+          setSavingProgress(currentProgress);
         },
-        getCustomerBySerialNumber
+        getCustomerBySerialNumber,
+        getCurrentAreaPayments,
+        {
+          enableRollback: true,
+          validateBeforeSubmit: true,
+          maxRetries: 3,
+          delayBetweenPayments: 100
+        }
       );
       
-      console.log('Batch processing result:', result);
+      console.log('Enhanced batch processing result:', result);
       
       if (!result.success || result.errors.length > 0) {
+        setProcessingStatus('Processing completed with errors');
         const errorMessage = result.errors.length > 0 
           ? `Saved ${result.savedCount} payments, but ${result.failedCount} failed: ${result.errors[0].error}`
           : 'Failed to save payments';
@@ -237,56 +242,66 @@ const Posting = () => {
         
         if (result.savedCount > 0) {
           toast.warning(`${result.savedCount} payments were saved successfully`);
+          // Partial success - still recalculate and clear saved entries
+          recalculateAllCustomerPayments();
+          // Remove successfully processed entries
+          const failedEntryIds = result.errors.map(e => e.entryId);
+          const remainingEntries = entries.filter(e => failedEntryIds.includes(e.id));
+          setEntries(remainingEntries);
         }
         
         return;
       }
       
-      // Verify payments were persisted
-      setProcessingStatus('Verifying payments saved...');
+      // Phase 2: Verify payments were persisted
+      setProcessingStatus('Verifying payments persistence...');
       setSavingProgress(85);
       
-      const verification = await processor.verifyPaymentsPersisted(
-        result.savedPaymentIds,
-        getCurrentAreaPayments,
-        3
-      );
+      // Additional verification delay for localStorage to settle
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      if (!verification.success) {
-        console.warn('Payment verification failed:', verification.missingIds);
-        toast.warning(`${result.savedCount} payments processed, but verification failed. Please check the payment details page.`);
-      }
-      
-      // Recalculate customer payments to ensure consistency
+      // Phase 3: Recalculate customer payments to ensure consistency
       setProcessingStatus('Updating customer balances...');
       setSavingProgress(95);
       recalculateAllCustomerPayments();
       
-      // Final success
+      // Phase 4: Final validation
+      const finalPayments = getCurrentAreaPayments();
+      const finalVerification = result.savedPaymentIds.every(id => 
+        finalPayments.some(p => p.id === id)
+      );
+      
+      if (!finalVerification) {
+        console.warn('Final verification failed - some payments may not be properly persisted');
+        toast.warning('Payments processed, but please verify the data on the posting details page');
+      }
+      
+      // Success!
       setSavingProgress(100);
-      setProcessingStatus('Complete!');
+      setProcessingStatus('All payments successfully processed!');
       
       toast.success(`Successfully saved ${result.savedCount} payments for ${date}`, { id: loadingToastId });
       
-      console.log(`Batch processing completed successfully. Saved: ${result.savedCount}`);
+      console.log(`Enhanced batch processing completed successfully. Batch ID: ${result.batchId}, Saved: ${result.savedCount}`);
       
       // Clear all form data
       setEntries([]);
       clearForm();
       
-      // Navigate with delay to ensure data persistence
+      // Navigate with additional delay to ensure all state updates are complete
       setTimeout(() => {
         navigate(`/posting/${date}`);
-      }, 300);
+      }, 500);
       
     } catch (error) {
-      console.error('Error during payment submission:', error);
-      setProcessingStatus('Error occurred');
+      console.error('Error during enhanced payment submission:', error);
+      setProcessingStatus('Critical error occurred');
       toast.error(`Failed to save payments: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
       setSavingProgress(0);
       setProcessingStatus('');
+      setBatchProcessor(null);
     }
   };
   
@@ -294,7 +309,7 @@ const Posting = () => {
     <div className="space-y-6 animate-fade-up">
       <PageTitle 
         title={`Record Payments${currentArea ? ` - ${currentArea.name}` : ''}`}
-        subtitle="Enter customer payments for collection (overpayments allowed as earnings)"
+        subtitle="Enter customer payments for collection (enhanced processing system)"
       />
       
       <div className="grid gap-6 lg:grid-cols-3">
@@ -438,7 +453,7 @@ const Posting = () => {
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-sm font-medium text-blue-900">
-                      {processingStatus || `Saving payments... ${savingProgress}%`}
+                      {processingStatus || `Processing payments... ${savingProgress}%`}
                     </p>
                     {savingProgress === 100 && (
                       <CheckCircle className="h-4 w-4 text-green-600" />
@@ -452,7 +467,8 @@ const Posting = () => {
                   </div>
                   {savingProgress > 0 && (
                     <p className="text-xs text-blue-700 mt-1">
-                      Processing {entries.length} payment{entries.length !== 1 ? 's' : ''}
+                      Enhanced processing: {entries.length} payment{entries.length !== 1 ? 's' : ''}
+                      {batchProcessor && ` (Batch ID: ${batchProcessor.getBatchStats().batchId})`}
                     </p>
                   )}
                 </div>
