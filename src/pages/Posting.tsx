@@ -28,27 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, Plus, Save, Trash2, Users, Loader2 } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, Users, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
-
-interface PaymentEntry {
-  id: string;
-  serialNumber: string;
-  customerName: string;
-  customerId: string;
-  amount: number;
-  agentName: string;
-}
-
-// Improved ID generation function
-const generateUniqueId = (() => {
-  let counter = 0;
-  return () => {
-    counter++;
-    return `payment_${Date.now()}_${counter}_${Math.random().toString(36).substring(2, 9)}`;
-  };
-})();
+import { generateUniquePaymentId } from '@/utils/idGeneration';
+import { PaymentBatchProcessor, PaymentEntry, BatchProcessingResult } from '@/utils/paymentBatchProcessor';
 
 const Posting = () => {
   const { 
@@ -57,7 +41,8 @@ const Posting = () => {
     getCustomerBySerialNumber, 
     recalculateAllCustomerPayments, 
     currentAreaId, 
-    getAreaById 
+    getAreaById,
+    getCurrentAreaPayments
   } = useFinance();
   
   const navigate = useNavigate();
@@ -77,6 +62,7 @@ const Posting = () => {
   const [totalAmount, setTotalAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savingProgress, setSavingProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
   
   useEffect(() => {
     const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
@@ -134,9 +120,9 @@ const Posting = () => {
       setEntries(updatedEntries);
       console.log('Updated existing entry:', updatedEntries[existingEntryIndex]);
     } else {
-      // Add new entry
+      // Add new entry with robust ID generation
       const newEntry: PaymentEntry = {
-        id: generateUniqueId(),
+        id: generateUniquePaymentId(),
         serialNumber: serialNumber.trim(),
         customerName: customerName.trim(),
         customerId: customer.id,
@@ -173,83 +159,6 @@ const Posting = () => {
     toast.success('Payment entry removed');
   };
   
-  // Batch payment processing function
-  const processBatchPayments = async (paymentEntries: PaymentEntry[]): Promise<{ success: boolean; savedCount: number; errors: string[] }> => {
-    const errors: string[] = [];
-    let savedCount = 0;
-    
-    console.log('Processing batch payments:', paymentEntries);
-    
-    // Validate all entries before processing
-    for (const entry of paymentEntries) {
-      const customer = getCustomerBySerialNumber(entry.serialNumber);
-      if (!customer) {
-        errors.push(`Customer not found for serial number: ${entry.serialNumber}`);
-        continue;
-      }
-      
-      if (entry.amount <= 0) {
-        errors.push(`Invalid amount for customer: ${entry.customerName}`);
-        continue;
-      }
-    }
-    
-    if (errors.length > 0) {
-      return { success: false, savedCount: 0, errors };
-    }
-    
-    // Process each payment
-    for (let i = 0; i < paymentEntries.length; i++) {
-      const entry = paymentEntries[i];
-      setSavingProgress(Math.round(((i + 1) / paymentEntries.length) * 100));
-      
-      try {
-        console.log(`Processing payment ${i + 1}/${paymentEntries.length}:`, entry);
-        
-        // Add payment with proper data
-        addPayment({
-          customerId: entry.customerId,
-          serialNumber: entry.serialNumber,
-          amount: entry.amount,
-          date,
-          collectionType,
-          agentName: entry.agentName,
-          areaId: currentAreaId || undefined
-        });
-        
-        savedCount++;
-        console.log(`Successfully saved payment for ${entry.customerName}`);
-        
-        // Small delay to ensure proper state updates
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-      } catch (error) {
-        console.error(`Error saving payment for ${entry.customerName}:`, error);
-        errors.push(`Failed to save payment for ${entry.customerName}: ${error}`);
-      }
-    }
-    
-    return { success: savedCount > 0, savedCount, errors };
-  };
-  
-  // Verify payments were actually saved
-  const verifyPaymentsSaved = async (expectedCount: number): Promise<boolean> => {
-    // Allow time for state updates
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    try {
-      // Recalculate all customer payments to ensure consistency
-      recalculateAllCustomerPayments();
-      
-      // Additional verification could be added here
-      console.log('Payment verification completed');
-      return true;
-    } catch (error) {
-      console.error('Error during payment verification:', error);
-      return false;
-    }
-  };
-  
   const handleSubmit = async () => {
     if (isSubmitting) return;
     
@@ -261,58 +170,99 @@ const Posting = () => {
       return;
     }
     
-    // Check for duplicate entries
-    const serialNumbers = entries.map(e => e.serialNumber);
-    const uniqueSerialNumbers = new Set(serialNumbers);
-    if (serialNumbers.length !== uniqueSerialNumbers.size) {
-      toast.error('Duplicate entries detected. Please review your entries.');
-      return;
-    }
-    
     setIsSubmitting(true);
     setSavingProgress(0);
+    setProcessingStatus('Initializing batch processing...');
     
     try {
-      toast.loading(`Saving ${entries.length} payments...`, { id: 'saving-payments' });
+      const loadingToastId = toast.loading(`Processing ${entries.length} payments...`);
       
-      // Process batch payments
-      const result = await processBatchPayments(entries);
+      // Create batch processor
+      const processor = new PaymentBatchProcessor();
+      setProcessingStatus('Processing payments...');
       
-      if (!result.success) {
-        throw new Error(`Failed to save payments: ${result.errors.join(', ')}`);
+      // Process batch with progress updates
+      const updateProgress = (current: number, total: number) => {
+        const progress = Math.round((current / total) * 80); // Reserve 20% for verification
+        setSavingProgress(progress);
+      };
+      
+      let processedCount = 0;
+      const result: BatchProcessingResult = await processor.processPaymentBatch(
+        entries,
+        {
+          date,
+          collectionType,
+          areaId: currentAreaId
+        },
+        (payment) => {
+          addPayment(payment);
+          processedCount++;
+          updateProgress(processedCount, entries.length);
+        },
+        getCustomerBySerialNumber
+      );
+      
+      console.log('Batch processing result:', result);
+      
+      if (!result.success || result.errors.length > 0) {
+        const errorMessage = result.errors.length > 0 
+          ? `Saved ${result.savedCount} payments, but ${result.failedCount} failed: ${result.errors[0].error}`
+          : 'Failed to save payments';
+        
+        toast.error(errorMessage, { id: loadingToastId });
+        
+        if (result.savedCount > 0) {
+          toast.warning(`${result.savedCount} payments were saved successfully`);
+        }
+        
+        return;
       }
       
-      if (result.errors.length > 0) {
-        console.warn('Some payments had issues:', result.errors);
-        toast.warning(`${result.savedCount} payments saved with ${result.errors.length} warnings`);
+      // Verify payments were persisted
+      setProcessingStatus('Verifying payments saved...');
+      setSavingProgress(85);
+      
+      const verification = await processor.verifyPaymentsPersisted(
+        result.savedPaymentIds,
+        getCurrentAreaPayments,
+        3
+      );
+      
+      if (!verification.success) {
+        console.warn('Payment verification failed:', verification.missingIds);
+        toast.warning(`${result.savedCount} payments processed, but verification failed. Please check the payment details page.`);
       }
       
-      // Verify payments were saved
-      const verified = await verifyPaymentsSaved(result.savedCount);
-      if (!verified) {
-        console.warn('Payment verification failed, but continuing...');
-      }
+      // Recalculate customer payments to ensure consistency
+      setProcessingStatus('Updating customer balances...');
+      setSavingProgress(95);
+      recalculateAllCustomerPayments();
       
-      // Success feedback
-      toast.success(`Successfully saved ${result.savedCount} payments for ${date}`, { id: 'saving-payments' });
+      // Final success
+      setSavingProgress(100);
+      setProcessingStatus('Complete!');
       
-      console.log(`Batch processing completed. Saved: ${result.savedCount}, Errors: ${result.errors.length}`);
+      toast.success(`Successfully saved ${result.savedCount} payments for ${date}`, { id: loadingToastId });
       
-      // Clear entries only after successful save
+      console.log(`Batch processing completed successfully. Saved: ${result.savedCount}`);
+      
+      // Clear entries only after successful save and verification
       setEntries([]);
-      setSavingProgress(0);
       
-      // Navigate with a small delay to ensure data is persisted
+      // Navigate with delay to ensure data persistence
       setTimeout(() => {
         navigate(`/posting/${date}`);
-      }, 100);
+      }, 300);
       
     } catch (error) {
       console.error('Error during payment submission:', error);
-      toast.error(`Failed to save payments: ${error}`, { id: 'saving-payments' });
+      setProcessingStatus('Error occurred');
+      toast.error(`Failed to save payments: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
       setSavingProgress(0);
+      setProcessingStatus('');
     }
   };
   
@@ -427,21 +377,31 @@ const Posting = () => {
               </div>
             </div>
             
-            {/* Progress indicator during submission */}
+            {/* Enhanced progress indicator during submission */}
             {isSubmitting && (
               <div className="p-4 rounded-lg border border-blue-200 bg-blue-50">
                 <div className="flex items-center gap-3">
                   <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-blue-900">
-                      Saving payments... {savingProgress}%
-                    </p>
-                    <div className="w-full bg-blue-200 rounded-full h-2 mt-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-medium text-blue-900">
+                        {processingStatus || `Saving payments... ${savingProgress}%`}
+                      </p>
+                      {savingProgress === 100 && (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      )}
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2">
                       <div 
                         className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
                         style={{ width: `${savingProgress}%` }}
                       />
                     </div>
+                    {savingProgress > 0 && (
+                      <p className="text-xs text-blue-700 mt-1">
+                        Processing {entries.length} payment{entries.length !== 1 ? 's' : ''}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -507,7 +467,7 @@ const Posting = () => {
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  Processing...
                 </>
               ) : (
                 <>

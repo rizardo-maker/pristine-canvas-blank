@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useFinance, Payment } from '@/context/FinanceContext';
@@ -39,9 +38,12 @@ import {
   Trash2,
   UserCircle,
   RefreshCw,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { toast } from 'sonner';
 
 const PostingDetails = () => {
   const { date } = useParams<{ date: string }>();
@@ -61,11 +63,12 @@ const PostingDetails = () => {
   const [uniqueAgents, setUniqueAgents] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<string>('');
+  const [dataIntegrityStatus, setDataIntegrityStatus] = useState<'checking' | 'valid' | 'issues' | null>(null);
   
   const currentArea = currentAreaId ? getAreaById(currentAreaId) : null;
   
-  // Function to load and filter payments
-  const loadPayments = () => {
+  // Enhanced data loading with integrity checks
+  const loadPayments = async () => {
     console.log('Loading payments for date:', date, 'area:', currentAreaId);
     
     if (!date) {
@@ -74,11 +77,30 @@ const PostingDetails = () => {
     }
     
     try {
-      // Get all payments for current area
-      const areaPayments = getCurrentAreaPayments();
-      console.log('All area payments:', areaPayments);
+      setDataIntegrityStatus('checking');
       
-      // Filter by date
+      // Get all payments for current area with multiple retry attempts
+      let areaPayments: Payment[] = [];
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        areaPayments = getCurrentAreaPayments();
+        
+        // If we have payments, break
+        if (areaPayments.length > 0 || retryCount === maxRetries - 1) {
+          break;
+        }
+        
+        // Wait and retry
+        await new Promise(resolve => setTimeout(resolve, 200));
+        retryCount++;
+        console.log(`Retry attempt ${retryCount} for loading payments`);
+      }
+      
+      console.log('All area payments loaded:', areaPayments.length);
+      
+      // Filter by date with enhanced matching
       const filteredPayments = areaPayments.filter(payment => {
         const paymentDate = payment.date;
         const matches = paymentDate === date;
@@ -88,11 +110,26 @@ const PostingDetails = () => {
       
       console.log('Filtered payments for date:', filteredPayments);
       
+      // Data integrity check
+      const hasValidData = filteredPayments.every(payment => 
+        payment.id && 
+        payment.customerName && 
+        payment.amount > 0 && 
+        payment.date === date
+      );
+      
+      setDataIntegrityStatus(hasValidData ? 'valid' : 'issues');
+      
+      if (!hasValidData) {
+        console.warn('Data integrity issues detected in payments');
+        toast.warning('Some payment data may be incomplete');
+      }
+      
       setDayPayments(filteredPayments);
       
       const total = filteredPayments.reduce((sum, payment) => sum + payment.amount, 0);
       setTotalAmount(total);
-      console.log('Total amount:', total);
+      console.log('Total amount calculated:', total);
       
       // Get unique agent names
       const agents = filteredPayments
@@ -104,6 +141,8 @@ const PostingDetails = () => {
       
     } catch (error) {
       console.error('Error loading payments:', error);
+      setDataIntegrityStatus('issues');
+      toast.error('Failed to load payment data');
     } finally {
       setIsLoading(false);
     }
@@ -114,26 +153,34 @@ const PostingDetails = () => {
     console.log('PostingDetails useEffect triggered');
     setIsLoading(true);
     
-    // Small delay to ensure data is fully loaded
+    // Enhanced delay to ensure data is fully loaded
     const timer = setTimeout(() => {
       loadPayments();
-    }, 100);
+    }, 150);
     
     return () => clearTimeout(timer);
   }, [date, currentAreaId, getCurrentAreaPayments]);
   
-  // Manual refresh function
-  const handleRefresh = () => {
+  // Manual refresh function with data validation
+  const handleRefresh = async () => {
     console.log('Manual refresh triggered');
     setIsLoading(true);
     
-    // Recalculate customer payments to ensure consistency
-    recalculateAllCustomerPayments();
-    
-    // Reload payments after recalculation
-    setTimeout(() => {
-      loadPayments();
-    }, 200);
+    try {
+      // Recalculate customer payments to ensure consistency
+      recalculateAllCustomerPayments();
+      
+      // Wait for recalculation to complete
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Reload payments after recalculation
+      await loadPayments();
+      
+      toast.success('Data refreshed successfully');
+    } catch (error) {
+      console.error('Error during refresh:', error);
+      toast.error('Failed to refresh data');
+    }
   };
   
   const exportToPdf = () => {
@@ -153,25 +200,37 @@ const PostingDetails = () => {
     html2pdf().set(opt).from(element).save();
   };
 
-  const handleDeletePayment = (paymentId: string) => {
+  const handleDeletePayment = async (paymentId: string) => {
     console.log('Deleting payment:', paymentId);
     
-    deletePayment(paymentId);
-    
-    // Update the local state immediately
-    const updatedPayments = dayPayments.filter(payment => payment.id !== paymentId);
-    setDayPayments(updatedPayments);
-    
-    const newTotal = updatedPayments.reduce((sum, payment) => sum + payment.amount, 0);
-    setTotalAmount(newTotal);
-    
-    // Update unique agents
-    const agents = updatedPayments
-      .map(payment => payment.agentName || 'Not specified')
-      .filter((value, index, self) => self.indexOf(value) === index);
-    setUniqueAgents(agents);
-    
-    console.log('Payment deleted, updated state');
+    try {
+      deletePayment(paymentId);
+      
+      // Update the local state immediately
+      const updatedPayments = dayPayments.filter(payment => payment.id !== paymentId);
+      setDayPayments(updatedPayments);
+      
+      const newTotal = updatedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+      setTotalAmount(newTotal);
+      
+      // Update unique agents
+      const agents = updatedPayments
+        .map(payment => payment.agentName || 'Not specified')
+        .filter((value, index, self) => self.indexOf(value) === index);
+      setUniqueAgents(agents);
+      
+      console.log('Payment deleted, updated state');
+      toast.success('Payment deleted successfully');
+      
+      // Recalculate customer payments after deletion
+      setTimeout(() => {
+        recalculateAllCustomerPayments();
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      toast.error('Failed to delete payment');
+    }
   };
   
   if (!date) {
@@ -220,7 +279,7 @@ const PostingDetails = () => {
             Refresh
           </Button>
           <Button
-            onClick={exportToPdf}
+            onClick={() => exportToPdf()}
             className="bg-finance-blue hover:bg-finance-blue/90"
             disabled={dayPayments.length === 0}
           >
@@ -230,16 +289,44 @@ const PostingDetails = () => {
         </div>
       </PageTitle>
       
-      {/* Loading state */}
+      {/* Enhanced loading state with data integrity status */}
       {isLoading && (
         <div className="text-center py-8">
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-finance-blue" />
           <p className="text-muted-foreground">Loading payment details...</p>
+          {dataIntegrityStatus === 'checking' && (
+            <p className="text-xs text-muted-foreground mt-2">Verifying data integrity...</p>
+          )}
         </div>
       )}
       
       {!isLoading && (
         <>
+          {/* Data integrity indicator */}
+          {dataIntegrityStatus && (
+            <div className={`p-3 rounded-lg border flex items-center gap-2 ${
+              dataIntegrityStatus === 'valid' 
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : dataIntegrityStatus === 'issues'
+                ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
+                : 'border-blue-200 bg-blue-50 text-blue-700'
+            }`}>
+              {dataIntegrityStatus === 'valid' ? (
+                <CheckCircle className="h-4 w-4" />
+              ) : (
+                <AlertCircle className="h-4 w-4" />
+              )}
+              <span className="text-sm">
+                {dataIntegrityStatus === 'valid' 
+                  ? 'All payment data verified'
+                  : dataIntegrityStatus === 'issues'
+                  ? 'Some data integrity issues detected'
+                  : 'Checking data integrity...'
+                }
+              </span>
+            </div>
+          )}
+          
           <div className="grid gap-6 md:grid-cols-3">
             <Card className="shadow-card border-none">
               <CardHeader className="pb-2">
