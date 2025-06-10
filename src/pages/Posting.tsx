@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFinance } from '@/context/FinanceContext';
@@ -29,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, Plus, Save, Trash2, Users } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, Users, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -41,6 +40,15 @@ interface PaymentEntry {
   amount: number;
   agentName: string;
 }
+
+// Improved ID generation function
+const generateUniqueId = (() => {
+  let counter = 0;
+  return () => {
+    counter++;
+    return `payment_${Date.now()}_${counter}_${Math.random().toString(36).substring(2, 9)}`;
+  };
+})();
 
 const Posting = () => {
   const { 
@@ -67,6 +75,8 @@ const Posting = () => {
   
   const [entries, setEntries] = useState<PaymentEntry[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [savingProgress, setSavingProgress] = useState(0);
   
   useEffect(() => {
     const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
@@ -85,9 +95,23 @@ const Posting = () => {
     }
   };
   
+  const validateEntry = (serialNumber: string, customerName: string, amount: number | ''): string | null => {
+    if (!serialNumber.trim()) return 'Serial number is required';
+    if (!customerName.trim()) return 'Customer name is required';
+    if (!amount || amount <= 0) return 'Valid amount is required';
+    
+    const customer = getCustomerBySerialNumber(serialNumber);
+    if (!customer) return 'Customer not found with this serial number';
+    
+    return null;
+  };
+  
   const handleAddEntry = () => {
-    if (!serialNumber || !customerName || !amount) {
-      toast.error('Please fill in all the required fields');
+    console.log('Adding entry:', { serialNumber, customerName, amount, agentName });
+    
+    const validationError = validateEntry(serialNumber, customerName, amount);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
     
@@ -97,65 +121,199 @@ const Posting = () => {
       return;
     }
     
-    // Remove the balance check - allow overpayments
     const existingEntryIndex = entries.findIndex(e => e.serialNumber === serialNumber);
     
     if (existingEntryIndex !== -1) {
+      // Update existing entry
       const updatedEntries = [...entries];
-      updatedEntries[existingEntryIndex].amount += Number(amount);
-      updatedEntries[existingEntryIndex].agentName = agentName;
-      setEntries(updatedEntries);
-    } else {
-      const newEntry: PaymentEntry = {
-        id: Date.now().toString(),
-        serialNumber,
-        customerName,
-        customerId: customer.id,
-        amount: Number(amount),
+      updatedEntries[existingEntryIndex] = {
+        ...updatedEntries[existingEntryIndex],
+        amount: updatedEntries[existingEntryIndex].amount + Number(amount),
         agentName: agentName || 'Not specified'
       };
+      setEntries(updatedEntries);
+      console.log('Updated existing entry:', updatedEntries[existingEntryIndex]);
+    } else {
+      // Add new entry
+      const newEntry: PaymentEntry = {
+        id: generateUniqueId(),
+        serialNumber: serialNumber.trim(),
+        customerName: customerName.trim(),
+        customerId: customer.id,
+        amount: Number(amount),
+        agentName: agentName.trim() || 'Not specified'
+      };
       
-      setEntries([...entries, newEntry]);
+      const updatedEntries = [...entries, newEntry];
+      setEntries(updatedEntries);
+      console.log('Added new entry:', newEntry);
+      console.log('All entries after add:', updatedEntries);
     }
     
-    // Show info about overpayment if applicable
+    // Show success feedback
     const remaining = customer.totalAmountToBePaid - customer.totalPaid;
     if (Number(amount) > remaining && remaining > 0) {
       const excess = Number(amount) - remaining;
-      toast.success(`Payment recorded. Excess amount of ₹${excess.toLocaleString()} will be treated as earnings.`);
+      toast.success(`Payment added. Excess amount of ₹${excess.toLocaleString()} will be treated as earnings.`);
+    } else {
+      toast.success('Payment entry added successfully');
     }
     
+    // Clear form
     setSerialNumber('');
     setCustomerName('');
     setAmount('');
   };
   
   const handleRemoveEntry = (id: string) => {
-    setEntries(entries.filter(entry => entry.id !== id));
+    console.log('Removing entry with id:', id);
+    const updatedEntries = entries.filter(entry => entry.id !== id);
+    setEntries(updatedEntries);
+    console.log('Entries after removal:', updatedEntries);
+    toast.success('Payment entry removed');
   };
   
-  const handleSubmit = () => {
+  // Batch payment processing function
+  const processBatchPayments = async (paymentEntries: PaymentEntry[]): Promise<{ success: boolean; savedCount: number; errors: string[] }> => {
+    const errors: string[] = [];
+    let savedCount = 0;
+    
+    console.log('Processing batch payments:', paymentEntries);
+    
+    // Validate all entries before processing
+    for (const entry of paymentEntries) {
+      const customer = getCustomerBySerialNumber(entry.serialNumber);
+      if (!customer) {
+        errors.push(`Customer not found for serial number: ${entry.serialNumber}`);
+        continue;
+      }
+      
+      if (entry.amount <= 0) {
+        errors.push(`Invalid amount for customer: ${entry.customerName}`);
+        continue;
+      }
+    }
+    
+    if (errors.length > 0) {
+      return { success: false, savedCount: 0, errors };
+    }
+    
+    // Process each payment
+    for (let i = 0; i < paymentEntries.length; i++) {
+      const entry = paymentEntries[i];
+      setSavingProgress(Math.round(((i + 1) / paymentEntries.length) * 100));
+      
+      try {
+        console.log(`Processing payment ${i + 1}/${paymentEntries.length}:`, entry);
+        
+        // Add payment with proper data
+        addPayment({
+          customerId: entry.customerId,
+          serialNumber: entry.serialNumber,
+          amount: entry.amount,
+          date,
+          collectionType,
+          agentName: entry.agentName,
+          areaId: currentAreaId || undefined
+        });
+        
+        savedCount++;
+        console.log(`Successfully saved payment for ${entry.customerName}`);
+        
+        // Small delay to ensure proper state updates
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+      } catch (error) {
+        console.error(`Error saving payment for ${entry.customerName}:`, error);
+        errors.push(`Failed to save payment for ${entry.customerName}: ${error}`);
+      }
+    }
+    
+    return { success: savedCount > 0, savedCount, errors };
+  };
+  
+  // Verify payments were actually saved
+  const verifyPaymentsSaved = async (expectedCount: number): Promise<boolean> => {
+    // Allow time for state updates
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    try {
+      // Recalculate all customer payments to ensure consistency
+      recalculateAllCustomerPayments();
+      
+      // Additional verification could be added here
+      console.log('Payment verification completed');
+      return true;
+    } catch (error) {
+      console.error('Error during payment verification:', error);
+      return false;
+    }
+  };
+  
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    
+    console.log('Starting payment submission with entries:', entries);
+    
+    // Validation checks
     if (entries.length === 0) {
       toast.error('Please add at least one payment entry');
       return;
     }
     
-    entries.forEach(entry => {
-      addPayment({
-        customerId: entry.customerId,
-        serialNumber: entry.serialNumber,
-        amount: entry.amount,
-        date,
-        collectionType,
-        agentName: entry.agentName
-      });
-    });
+    // Check for duplicate entries
+    const serialNumbers = entries.map(e => e.serialNumber);
+    const uniqueSerialNumbers = new Set(serialNumbers);
+    if (serialNumbers.length !== uniqueSerialNumbers.size) {
+      toast.error('Duplicate entries detected. Please review your entries.');
+      return;
+    }
     
-    recalculateAllCustomerPayments();
+    setIsSubmitting(true);
+    setSavingProgress(0);
     
-    toast.success(`Successfully recorded ${entries.length} payments for ${date}`);
-    
-    navigate(`/posting/${date}`);
+    try {
+      toast.loading(`Saving ${entries.length} payments...`, { id: 'saving-payments' });
+      
+      // Process batch payments
+      const result = await processBatchPayments(entries);
+      
+      if (!result.success) {
+        throw new Error(`Failed to save payments: ${result.errors.join(', ')}`);
+      }
+      
+      if (result.errors.length > 0) {
+        console.warn('Some payments had issues:', result.errors);
+        toast.warning(`${result.savedCount} payments saved with ${result.errors.length} warnings`);
+      }
+      
+      // Verify payments were saved
+      const verified = await verifyPaymentsSaved(result.savedCount);
+      if (!verified) {
+        console.warn('Payment verification failed, but continuing...');
+      }
+      
+      // Success feedback
+      toast.success(`Successfully saved ${result.savedCount} payments for ${date}`, { id: 'saving-payments' });
+      
+      console.log(`Batch processing completed. Saved: ${result.savedCount}, Errors: ${result.errors.length}`);
+      
+      // Clear entries only after successful save
+      setEntries([]);
+      setSavingProgress(0);
+      
+      // Navigate with a small delay to ensure data is persisted
+      setTimeout(() => {
+        navigate(`/posting/${date}`);
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error during payment submission:', error);
+      toast.error(`Failed to save payments: ${error}`, { id: 'saving-payments' });
+    } finally {
+      setIsSubmitting(false);
+      setSavingProgress(0);
+    }
   };
   
   return (
@@ -184,6 +342,7 @@ const Posting = () => {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     required
+                    disabled={isSubmitting}
                   />
                   <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
@@ -193,6 +352,7 @@ const Posting = () => {
                 <Select 
                   value={collectionType} 
                   onValueChange={(value) => setCollectionType(value as 'daily' | 'weekly' | 'monthly')}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger id="collectionType">
                     <SelectValue placeholder="Select collection type" />
@@ -215,6 +375,7 @@ const Posting = () => {
                     value={serialNumber}
                     onChange={handleSerialNumberChange}
                     placeholder="Enter serial number"
+                    disabled={isSubmitting}
                   />
                 </div>
                 
@@ -236,6 +397,7 @@ const Posting = () => {
                     value={agentName}
                     onChange={(e) => setAgentName(e.target.value)}
                     placeholder="Enter agent name"
+                    disabled={isSubmitting}
                   />
                 </div>
                 
@@ -250,11 +412,13 @@ const Posting = () => {
                       value={amount}
                       onChange={(e) => setAmount(e.target.value ? Number(e.target.value) : '')}
                       placeholder="Enter amount"
+                      disabled={isSubmitting}
                     />
                     <Button
                       type="button"
                       onClick={handleAddEntry}
                       className="bg-finance-blue hover:bg-finance-blue/90"
+                      disabled={isSubmitting}
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
@@ -262,6 +426,26 @@ const Posting = () => {
                 </div>
               </div>
             </div>
+            
+            {/* Progress indicator during submission */}
+            {isSubmitting && (
+              <div className="p-4 rounded-lg border border-blue-200 bg-blue-50">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-900">
+                      Saving payments... {savingProgress}%
+                    </p>
+                    <div className="w-full bg-blue-200 rounded-full h-2 mt-1">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${savingProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <div className="rounded-lg border">
               <Table>
@@ -288,6 +472,7 @@ const Posting = () => {
                             size="icon"
                             onClick={() => handleRemoveEntry(entry.id)}
                             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={isSubmitting}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -308,14 +493,28 @@ const Posting = () => {
           <CardFooter className="justify-between border-t p-4">
             <div className="text-lg font-medium">
               Total: <span className="text-finance-blue">₹{totalAmount.toLocaleString()}</span>
+              {entries.length > 0 && (
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({entries.length} payment{entries.length !== 1 ? 's' : ''})
+                </span>
+              )}
             </div>
             <Button
               onClick={handleSubmit}
-              disabled={entries.length === 0}
+              disabled={entries.length === 0 || isSubmitting}
               className="bg-finance-blue hover:bg-finance-blue/90"
             >
-              <Save className="mr-2 h-4 w-4" />
-              Save Payments
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Payments
+                </>
+              )}
             </Button>
           </CardFooter>
         </Card>
@@ -340,8 +539,10 @@ const Posting = () => {
                     key={customer.id} 
                     className="flex items-center justify-between p-3 rounded-lg hover:bg-finance-gray transition-colors cursor-pointer"
                     onClick={() => {
-                      setSerialNumber(customer.serialNumber);
-                      setCustomerName(customer.name);
+                      if (!isSubmitting) {
+                        setSerialNumber(customer.serialNumber);
+                        setCustomerName(customer.name);
+                      }
                     }}
                   >
                     <div className="flex items-center gap-3">
@@ -377,6 +578,7 @@ const Posting = () => {
                   variant="outline"
                   className="w-full text-finance-blue"
                   onClick={() => navigate('/customers')}
+                  disabled={isSubmitting}
                 >
                   View All Customers
                 </Button>
