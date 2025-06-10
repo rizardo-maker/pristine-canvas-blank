@@ -28,11 +28,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, Plus, Save, Trash2, Users, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, Users, Loader2, CheckCircle, AlertCircle, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { generateUniquePaymentId } from '@/utils/idGeneration';
 import { PaymentBatchProcessor, PaymentEntry, BatchProcessingResult } from '@/utils/paymentBatchProcessor';
+import CustomerDetailsCard from '@/components/posting/CustomerDetailsCard';
 
 const Posting = () => {
   const { 
@@ -42,7 +43,8 @@ const Posting = () => {
     recalculateAllCustomerPayments, 
     currentAreaId, 
     getAreaById,
-    getCurrentAreaPayments
+    getCurrentAreaPayments,
+    getCustomerPayments
   } = useFinance();
   
   const navigate = useNavigate();
@@ -57,6 +59,10 @@ const Posting = () => {
   const [customerName, setCustomerName] = useState('');
   const [agentName, setAgentName] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
+  
+  // New state for customer details display
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   
   const [entries, setEntries] = useState<PaymentEntry[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
@@ -73,11 +79,21 @@ const Posting = () => {
     const value = e.target.value;
     setSerialNumber(value);
     
-    const customer = getCustomerBySerialNumber(value);
-    if (customer) {
-      setCustomerName(customer.name);
+    if (value.trim()) {
+      const customer = getCustomerBySerialNumber(value);
+      if (customer) {
+        setCustomerName(customer.name);
+        setSelectedCustomer(customer);
+        setShowCustomerDetails(true);
+      } else {
+        setCustomerName('');
+        setSelectedCustomer(null);
+        setShowCustomerDetails(false);
+      }
     } else {
       setCustomerName('');
+      setSelectedCustomer(null);
+      setShowCustomerDetails(false);
     }
   };
   
@@ -145,10 +161,9 @@ const Posting = () => {
       toast.success('Payment entry added successfully');
     }
     
-    // Clear form
-    setSerialNumber('');
-    setCustomerName('');
+    // Clear form but keep customer details displayed
     setAmount('');
+    // Don't clear serialNumber and customerName to keep customer details visible
   };
   
   const handleRemoveEntry = (id: string) => {
@@ -157,6 +172,14 @@ const Posting = () => {
     setEntries(updatedEntries);
     console.log('Entries after removal:', updatedEntries);
     toast.success('Payment entry removed');
+  };
+
+  const clearForm = () => {
+    setSerialNumber('');
+    setCustomerName('');
+    setSelectedCustomer(null);
+    setShowCustomerDetails(false);
+    setAmount('');
   };
   
   const handleSubmit = async () => {
@@ -247,8 +270,9 @@ const Posting = () => {
       
       console.log(`Batch processing completed successfully. Saved: ${result.savedCount}`);
       
-      // Clear entries only after successful save and verification
+      // Clear all form data
       setEntries([]);
+      clearForm();
       
       // Navigate with delay to ensure data persistence
       setTimeout(() => {
@@ -274,86 +298,112 @@ const Posting = () => {
       />
       
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2 shadow-card border-none">
-          <CardHeader>
-            <CardTitle>Payment Details</CardTitle>
-            <CardDescription>
-              Enter the serial number and payment amount for each customer. Overpayments are allowed and will be treated as earnings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="date">Collection Date</Label>
-                <div className="relative">
-                  <Input
-                    id="date"
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    required
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="shadow-card border-none">
+            <CardHeader>
+              <CardTitle>Payment Details</CardTitle>
+              <CardDescription>
+                Enter the serial number to view customer details and record payments.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="date">Collection Date</Label>
+                  <div className="relative">
+                    <Input
+                      id="date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      required
+                      disabled={isSubmitting}
+                    />
+                    <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="collectionType">Collection Type</Label>
+                  <Select 
+                    value={collectionType} 
+                    onValueChange={(value) => setCollectionType(value as 'daily' | 'weekly' | 'monthly')}
                     disabled={isSubmitting}
-                  />
-                  <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  >
+                    <SelectTrigger id="collectionType">
+                      <SelectValue placeholder="Select collection type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="collectionType">Collection Type</Label>
-                <Select 
-                  value={collectionType} 
-                  onValueChange={(value) => setCollectionType(value as 'daily' | 'weekly' | 'monthly')}
-                  disabled={isSubmitting}
-                >
-                  <SelectTrigger id="collectionType">
-                    <SelectValue placeholder="Select collection type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
+              
+              <div className="p-4 rounded-lg border border-border bg-muted/30">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="serialNumber">Serial Number</Label>
+                    <div className="relative">
+                      <Input
+                        id="serialNumber"
+                        value={serialNumber}
+                        onChange={handleSerialNumberChange}
+                        placeholder="Enter serial number"
+                        disabled={isSubmitting}
+                      />
+                      <Search className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="customerName">Customer Name</Label>
+                    <Input
+                      id="customerName"
+                      value={customerName}
+                      readOnly
+                      className="bg-muted"
+                      placeholder="Customer name will appear here"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="agentName">Agent Name</Label>
+                    <Input
+                      id="agentName"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      placeholder="Enter agent name"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div className="p-4 rounded-lg border border-border bg-muted/30">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-2">
-                  <Label htmlFor="serialNumber">Serial Number</Label>
-                  <Input
-                    id="serialNumber"
-                    value={serialNumber}
-                    onChange={handleSerialNumberChange}
-                    placeholder="Enter serial number"
-                    disabled={isSubmitting}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="customerName">Customer Name</Label>
-                  <Input
-                    id="customerName"
-                    value={customerName}
-                    readOnly
-                    className="bg-muted"
-                    placeholder="Customer name will appear here"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="agentName">Agent Name</Label>
-                  <Input
-                    id="agentName"
-                    value={agentName}
-                    onChange={(e) => setAgentName(e.target.value)}
-                    placeholder="Enter agent name"
-                    disabled={isSubmitting}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Amount (₹)</Label>
-                  <div className="flex space-x-2">
+            </CardContent>
+          </Card>
+
+          {/* Customer Details Display */}
+          {showCustomerDetails && selectedCustomer && (
+            <CustomerDetailsCard 
+              customer={selectedCustomer}
+              customerPayments={getCustomerPayments(selectedCustomer.id)}
+            />
+          )}
+
+          {/* Amount Entry Section - Only show when customer is selected */}
+          {showCustomerDetails && selectedCustomer && (
+            <Card className="shadow-card border-none border-l-4 border-l-finance-blue">
+              <CardHeader>
+                <CardTitle className="text-finance-blue">Add Payment</CardTitle>
+                <CardDescription>
+                  Enter the payment amount for {selectedCustomer.name}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="amount">Payment Amount (₹)</Label>
                     <Input
                       id="amount"
                       type="number"
@@ -361,123 +411,145 @@ const Posting = () => {
                       step="any"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value ? Number(e.target.value) : '')}
-                      placeholder="Enter amount"
+                      placeholder="Enter payment amount"
                       disabled={isSubmitting}
+                      className="text-lg"
                     />
-                    <Button
-                      type="button"
-                      onClick={handleAddEntry}
-                      className="bg-finance-blue hover:bg-finance-blue/90"
-                      disabled={isSubmitting}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
                   </div>
+                  <Button
+                    type="button"
+                    onClick={handleAddEntry}
+                    className="bg-finance-blue hover:bg-finance-blue/90"
+                    disabled={isSubmitting || !amount}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Payment
+                  </Button>
                 </div>
-              </div>
-            </div>
-            
-            {/* Enhanced progress indicator during submission */}
-            {isSubmitting && (
-              <div className="p-4 rounded-lg border border-blue-200 bg-blue-50">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm font-medium text-blue-900">
-                        {processingStatus || `Saving payments... ${savingProgress}%`}
-                      </p>
-                      {savingProgress === 100 && (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      )}
-                    </div>
-                    <div className="w-full bg-blue-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                        style={{ width: `${savingProgress}%` }}
-                      />
-                    </div>
-                    {savingProgress > 0 && (
-                      <p className="text-xs text-blue-700 mt-1">
-                        Processing {entries.length} payment{entries.length !== 1 ? 's' : ''}
-                      </p>
+              </CardContent>
+            </Card>
+          )}
+          
+          {/* Enhanced progress indicator during submission */}
+          {isSubmitting && (
+            <div className="p-4 rounded-lg border border-blue-200 bg-blue-50">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-medium text-blue-900">
+                      {processingStatus || `Saving payments... ${savingProgress}%`}
+                    </p>
+                    {savingProgress === 100 && (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
                     )}
                   </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${savingProgress}%` }}
+                    />
+                  </div>
+                  {savingProgress > 0 && (
+                    <p className="text-xs text-blue-700 mt-1">
+                      Processing {entries.length} payment{entries.length !== 1 ? 's' : ''}
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
-            
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Serial #</TableHead>
-                    <TableHead>Customer Name</TableHead>
-                    {!isMobile && <TableHead>Agent</TableHead>}
-                    <TableHead className="text-right">Amount (₹)</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {entries.length > 0 ? (
-                    entries.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell className="font-medium">{entry.serialNumber}</TableCell>
-                        <TableCell>{entry.customerName}</TableCell>
-                        {!isMobile && <TableCell>{entry.agentName}</TableCell>}
-                        <TableCell className="text-right">{entry.amount.toLocaleString()}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveEntry(entry.id)}
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            disabled={isSubmitting}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+            </div>
+          )}
+          
+          {/* Payment Entries Table */}
+          <Card className="shadow-card border-none">
+            <CardHeader>
+              <CardTitle>Payment Entries</CardTitle>
+              <CardDescription>
+                Review payments before saving
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Serial #</TableHead>
+                      <TableHead>Customer Name</TableHead>
+                      {!isMobile && <TableHead>Agent</TableHead>}
+                      <TableHead className="text-right">Amount (₹)</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entries.length > 0 ? (
+                      entries.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell className="font-medium">{entry.serialNumber}</TableCell>
+                          <TableCell>{entry.customerName}</TableCell>
+                          {!isMobile && <TableCell>{entry.agentName}</TableCell>}
+                          <TableCell className="text-right">{entry.amount.toLocaleString()}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveEntry(entry.id)}
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              disabled={isSubmitting}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={isMobile ? 4 : 5} className="text-center py-6 text-muted-foreground">
+                          No payment entries added yet
                         </TableCell>
                       </TableRow>
-                    ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+            <CardFooter className="justify-between border-t p-4">
+              <div className="text-lg font-medium">
+                Total: <span className="text-finance-blue">₹{totalAmount.toLocaleString()}</span>
+                {entries.length > 0 && (
+                  <span className="text-sm text-muted-foreground ml-2">
+                    ({entries.length} payment{entries.length !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={clearForm}
+                  disabled={isSubmitting}
+                >
+                  Clear Form
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={entries.length === 0 || isSubmitting}
+                  className="bg-finance-blue hover:bg-finance-blue/90"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
                   ) : (
-                    <TableRow>
-                      <TableCell colSpan={isMobile ? 4 : 5} className="text-center py-6 text-muted-foreground">
-                        No entries added yet
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Payments
+                    </>
                   )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-          <CardFooter className="justify-between border-t p-4">
-            <div className="text-lg font-medium">
-              Total: <span className="text-finance-blue">₹{totalAmount.toLocaleString()}</span>
-              {entries.length > 0 && (
-                <span className="text-sm text-muted-foreground ml-2">
-                  ({entries.length} payment{entries.length !== 1 ? 's' : ''})
-                </span>
-              )}
-            </div>
-            <Button
-              onClick={handleSubmit}
-              disabled={entries.length === 0 || isSubmitting}
-              className="bg-finance-blue hover:bg-finance-blue/90"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Payments
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
+                </Button>
+              </div>
+            </CardFooter>
+          </Card>
+        </div>
         
         <Card className="shadow-card border-none">
           <CardHeader>
@@ -502,6 +574,8 @@ const Posting = () => {
                       if (!isSubmitting) {
                         setSerialNumber(customer.serialNumber);
                         setCustomerName(customer.name);
+                        setSelectedCustomer(customer);
+                        setShowCustomerDetails(true);
                       }
                     }}
                   >
