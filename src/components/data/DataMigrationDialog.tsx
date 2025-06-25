@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -85,10 +85,10 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
       const customersResult = await loadFromIndexedDB('customers', user.id);
       const paymentsResult = await loadFromIndexedDB('payments', user.id);
       
-      const customersCount = customersResult.data?.length || 0;
-      const paymentsCount = paymentsResult.data?.length || 0;
+      const customersData = Array.isArray(customersResult.data) ? customersResult.data : [];
+      const paymentsData = Array.isArray(paymentsResult.data) ? paymentsResult.data : [];
       
-      return customersCount + paymentsCount;
+      return customersData.length + paymentsData.length;
     } catch (error) {
       console.error('Error getting local records count:', error);
       return 0;
