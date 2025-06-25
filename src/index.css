@@ -1,0 +1,163 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import './styles/mobile.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 12%;
+
+    --primary: 210 90% 58%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 47% 12%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 20% 96%;
+    --accent-foreground: 222 47% 12%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 84% 5%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 12%;
+    --sidebar-primary: 210 90% 58%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 222 47% 12%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 210 90% 58%;
+
+    /* Finance colors */
+    --finance-blue: 217 95% 57%;
+    --finance-blue-light: 212 100% 96%;
+    --finance-green: 168 80% 47%;
+    --finance-green-light: 165 67% 94%;
+    --finance-red: 0 100% 68%;
+    --finance-red-light: 0 100% 96%;
+    --finance-gray: 216 67% 98%;
+    --finance-text-primary: 231 48% 31%;
+    --finance-text-secondary: 222 25% 67%;
+  }
+
+  .dark {
+    --background: 222 47% 12%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 90% 58%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 18%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 213 27% 84%;
+
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 210 90% 58%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 18%;
+    --sidebar-ring: 213 27% 84%;
+
+    /* Finance colors */
+    --finance-blue: 217 95% 67%;
+    --finance-blue-light: 217 33% 22%;
+    --finance-green: 168 80% 57%;
+    --finance-green-light: 168 33% 22%;
+    --finance-red: 0 100% 74%;
+    --finance-red-light: 0 45% 25%;
+    --finance-gray: 217 33% 22%;
+    --finance-text-primary: 210 40% 98%;
+    --finance-text-secondary: 215 20% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white bg-opacity-60 backdrop-filter backdrop-blur-lg border border-white border-opacity-20 shadow-soft;
+  }
+  
+  .animated-card {
+    @apply transition-all duration-300 ease-in-out hover:shadow-elevated hover:-translate-y-1;
+  }
+  
+  .fade-in {
+    @apply animate-fade-in;
+  }
+  
+  .fade-up {
+    @apply animate-fade-up;
+  }
+  
+  .scale-in {
+    @apply animate-scale-in;
+  }
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  .mobile-padding {
+    padding: 1rem;
+  }
+  
+  .mobile-text {
+    font-size: 14px;
+  }
+}

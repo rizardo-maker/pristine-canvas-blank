@@ -1,0 +1,21 @@
+
+[package]
+name = "collectify-manager"
+version = "1.0.0"
+description = "Finance collection management desktop application"
+authors = ["Collectify Team"]
+license = "MIT"
+repository = ""
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.5", features = [ "api-all" ] }
+
+[features]
+default = [ "custom-protocol" ]
+custom-protocol = [ "tauri/custom-protocol" ]
