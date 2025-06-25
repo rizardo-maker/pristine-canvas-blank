@@ -1,26 +1,26 @@
 
 import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/context/LocalAuthContext";
+import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
 
 type RequireAuthProps = {
   children: React.ReactNode;
 };
 
 const RequireAuth = ({ children }: RequireAuthProps) => {
-  const { user, isLoading, isFirstTime } = useAuth();
+  const { user, isLoading } = useFirebaseAuth();
   const location = useLocation();
 
   useEffect(() => {
     // This effect ensures we re-render when auth state changes
     if (!isLoading) {
-      if (!user || isFirstTime) {
-        console.log("User not authenticated or first time setup, will redirect to auth");
+      if (!user) {
+        console.log("User not authenticated, will redirect to sign-in");
       } else {
         console.log("User authenticated, allowing access");
       }
     }
-  }, [user, isLoading, isFirstTime]);
+  }, [user, isLoading]);
 
   // If still loading auth state, show a loading indicator
   if (isLoading) {
@@ -34,12 +34,12 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
     );
   }
 
-  // If not authenticated or it's first time setup, redirect to auth page
-  if (!user || isFirstTime) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+  // If not authenticated, redirect to sign-in page
+  if (!user) {
+    return <Navigate to="/sign-in" state={{ from: location }} replace />;
   }
 
-  // If authenticated and setup is complete, render the children
+  // If authenticated, render the children
   return <>{children}</>;
 };
 

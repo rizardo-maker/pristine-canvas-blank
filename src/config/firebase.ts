@@ -3,15 +3,16 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// Your Firebase configuration object
-// You'll get this from your Firebase project console
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "your-sender-id",
-  appId: "your-app-id"
+  apiKey: "AIzaSyCiK5LoaTLGxgWQyBRShydqTwlDBAbPaD4",
+  authDomain: "line-manager-app.firebaseapp.com",
+  databaseURL: "https://line-manager-app-default-rtdb.firebaseio.com",
+  projectId: "line-manager-app",
+  storageBucket: "line-manager-app.firebasestorage.app",
+  messagingSenderId: "1026229395798",
+  appId: "1:1026229395798:web:529363db23144e919536f7",
+  measurementId: "G-GRF0MF93X6"
 };
 
 // Initialize Firebase

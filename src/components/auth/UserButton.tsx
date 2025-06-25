@@ -1,6 +1,6 @@
 
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/LocalAuthContext";
+import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
 import { User, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -13,17 +13,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const UserButton = () => {
-  const { user, signOut } = useAuth();
+  const { user, signOut } = useFirebaseAuth();
   const navigate = useNavigate();
 
-  const handleSignOut = () => {
-    signOut();
+  const handleSignOut = async () => {
+    await signOut();
     navigate("/");
   };
 
   if (!user) {
     return (
-      <Button variant="outline" onClick={() => navigate("/auth")} className="gap-2">
+      <Button variant="outline" onClick={() => navigate("/sign-in")} className="gap-2">
         <User size={18} />
         <span>Sign In</span>
       </Button>

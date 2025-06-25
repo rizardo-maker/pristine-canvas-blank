@@ -1,16 +1,15 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Mail, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { FcGoogle } from "react-icons/fc";
 
 const SignIn = () => {
-  const { signIn, signInWithGoogle, isLoading, user } = useAuth();
+  const { signIn, isLoading, user } = useFirebaseAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
@@ -38,14 +37,8 @@ const SignIn = () => {
     const success = await signIn(email, password);
     
     if (success) {
-      // Don't navigate here, let the auth state change handle it
-      // The page will be redirected after a successful sign-in
+      navigate("/dashboard");
     }
-  };
-
-  const handleGoogleSignIn = async () => {
-    await signInWithGoogle();
-    // Redirect happens automatically via the auth state change
   };
 
   if (isLoading) {
@@ -106,26 +99,6 @@ const SignIn = () => {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-          
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-          
-          <Button 
-            onClick={handleGoogleSignIn} 
-            variant="outline"
-            className="w-full py-6 text-base"
-            disabled={isLoading}
-          >
-            <FcGoogle className="mr-2 h-5 w-5" /> Sign in with Google
-          </Button>
         </CardContent>
         <CardFooter className="flex justify-center">
           <Button 

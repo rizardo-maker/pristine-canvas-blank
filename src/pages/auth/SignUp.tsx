@@ -1,16 +1,15 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Mail, Lock, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { FcGoogle } from "react-icons/fc";
 
 const SignUp = () => {
-  const { signUp, signInWithGoogle, isLoading, user } = useAuth();
+  const { signUp, isLoading, user } = useFirebaseAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,19 +47,8 @@ const SignUp = () => {
     const success = await signUp(email, password, name);
     
     if (success) {
-      // Don't navigate here, let the auth state change handle the navigation
-      // or if email confirmation is required, show appropriate message
-      toast({
-        title: "Account created!",
-        description: "You may need to verify your email before signing in",
-      });
-      navigate("/sign-in");
+      navigate("/dashboard");
     }
-  };
-
-  const handleGoogleSignUp = async () => {
-    await signInWithGoogle();
-    // Redirect happens automatically via the auth state change
   };
 
   if (isLoading) {
@@ -135,26 +123,6 @@ const SignUp = () => {
               {isLoading ? "Creating Account..." : "Sign Up"}
             </Button>
           </form>
-          
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-          
-          <Button 
-            onClick={handleGoogleSignUp} 
-            variant="outline"
-            className="w-full py-6 text-base"
-            disabled={isLoading}
-          >
-            <FcGoogle className="mr-2 h-5 w-5" /> Sign up with Google
-          </Button>
         </CardContent>
         <CardFooter className="flex justify-center">
           <Button 
