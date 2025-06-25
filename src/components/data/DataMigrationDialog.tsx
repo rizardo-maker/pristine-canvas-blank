@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { useFirebaseData } from '@/context/FirebaseDataContext';
 import { useAuth } from '@/context/LocalAuthContext';
-import { getStoredData } from '@/utils/indexedDB';
+import { loadFromIndexedDB } from '@/utils/indexedDB';
 import { Progress } from '@/components/ui/progress';
 import { CheckCircle, AlertCircle, Upload } from 'lucide-react';
 
@@ -25,24 +25,35 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
   const [migrationStatus, setMigrationStatus] = useState<'idle' | 'migrating' | 'success' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const { migrateLocalData } = useFirebaseData();
-  const { customers: localCustomers, payments: localPayments } = useAuth();
+  const { user } = useAuth();
 
   const handleMigration = async () => {
+    if (!user) {
+      setMigrationStatus('error');
+      return;
+    }
+
     setIsLoading(true);
     setMigrationStatus('migrating');
     setProgress(0);
 
     try {
-      // Get all local data
+      // Get all local data from IndexedDB
       setProgress(20);
       
-      const localData = {
-        customers: localCustomers || [],
-        payments: localPayments || [],
-        areas: [] // Add areas if available
-      };
+      const customersResult = await loadFromIndexedDB('customers', user.id);
+      const paymentsResult = await loadFromIndexedDB('payments', user.id);
+      const areasResult = await loadFromIndexedDB('areas', user.id);
 
       setProgress(50);
+
+      const localData = {
+        customers: customersResult.data || [],
+        payments: paymentsResult.data || [],
+        areas: areasResult.data || []
+      };
+
+      setProgress(70);
 
       // Migrate to Firebase
       const success = await migrateLocalData(localData);
@@ -67,9 +78,32 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
     }
   };
 
-  const getTotalLocalRecords = () => {
-    return (localCustomers?.length || 0) + (localPayments?.length || 0);
+  const getTotalLocalRecords = async () => {
+    if (!user) return 0;
+    
+    try {
+      const customersResult = await loadFromIndexedDB('customers', user.id);
+      const paymentsResult = await loadFromIndexedDB('payments', user.id);
+      
+      const customersCount = customersResult.data?.length || 0;
+      const paymentsCount = paymentsResult.data?.length || 0;
+      
+      return customersCount + paymentsCount;
+    } catch (error) {
+      console.error('Error getting local records count:', error);
+      return 0;
+    }
   };
+
+  // For display purposes, we'll use a state to track the record count
+  const [localRecordCount, setLocalRecordCount] = useState(0);
+
+  // Load record count when dialog opens
+  React.useEffect(() => {
+    if (open && user) {
+      getTotalLocalRecords().then(count => setLocalRecordCount(count));
+    }
+  }, [open, user]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -88,9 +122,8 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
           <div className="p-4 bg-muted rounded-lg">
             <h4 className="font-medium mb-2">Local Data Summary:</h4>
             <ul className="text-sm space-y-1">
-              <li>• {localCustomers?.length || 0} customers</li>
-              <li>• {localPayments?.length || 0} payments</li>
-              <li>• Total: {getTotalLocalRecords()} records</li>
+              <li>• Ready to migrate local data</li>
+              <li>• Total: {localRecordCount} records</li>
             </ul>
           </div>
 
@@ -125,7 +158,7 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
           </Button>
           <Button 
             onClick={handleMigration} 
-            disabled={isLoading || getTotalLocalRecords() === 0 || migrationStatus === 'success'}
+            disabled={isLoading || localRecordCount === 0 || migrationStatus === 'success'}
           >
             {isLoading ? 'Migrating...' : 'Start Migration'}
           </Button>
