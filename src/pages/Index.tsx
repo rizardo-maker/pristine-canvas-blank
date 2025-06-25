@@ -14,6 +14,11 @@ const Index = () => {
   const isLoading = localLoading || firebaseLoading;
   
   useEffect(() => {
+    console.log("Index - Firebase user:", firebaseUser);
+    console.log("Index - Local user:", localUser);
+    console.log("Index - Is loading:", isLoading);
+    console.log("Index - Is first time:", isFirstTime);
+
     if (isLoading) return;
     
     // If Firebase user is authenticated, route to dashboard
@@ -25,7 +30,7 @@ const Index = () => {
     
     // If local user is authenticated and setup is complete, route to appropriate page
     if (localUser && !isFirstTime) {
-      console.log("Local user authenticated, routing to app");
+      console.log("Local user authenticated, routing to app-entry");
       navigate('/app-entry');
     }
     // If user is not authenticated or first time, they'll see the landing page

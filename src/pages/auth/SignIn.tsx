@@ -17,8 +17,10 @@ const SignIn = () => {
 
   // Redirect if user is already logged in
   useEffect(() => {
+    console.log("SignIn - User:", user);
     if (user) {
-      navigate("/dashboard");
+      console.log("User already authenticated, redirecting to dashboard");
+      navigate("/dashboard", { replace: true });
     }
   }, [user, navigate]);
 
@@ -34,10 +36,14 @@ const SignIn = () => {
       return;
     }
     
+    console.log("Attempting sign in...");
     const success = await signIn(email, password);
     
     if (success) {
-      navigate("/dashboard");
+      console.log("Sign in successful, navigating to dashboard");
+      navigate("/dashboard", { replace: true });
+    } else {
+      console.log("Sign in failed");
     }
   };
 

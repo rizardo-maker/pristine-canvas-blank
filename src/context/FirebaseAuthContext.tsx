@@ -33,13 +33,18 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("Auth state changed:", firebaseUser?.email);
+      
       if (firebaseUser) {
         // User is signed in
         setFirebaseUser(firebaseUser);
         
         // Get user data from Firestore
         const result = await firebaseService.getUserData(firebaseUser.uid);
-        if (!result.error) {
+        if (!result.error && result.data) {
+          console.log("User data loaded from Firestore:", result.data);
+          setUser(result.data);
+        } else {
           // If no user data in Firestore, create basic user object
           const userData: FirebaseUser = {
             id: firebaseUser.uid,
@@ -47,10 +52,12 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
             email: firebaseUser.email!,
             createdAt: new Date().toISOString()
           };
+          console.log("Creating new user data:", userData);
           setUser(userData);
         }
       } else {
         // User is signed out
+        console.log("User signed out");
         setFirebaseUser(null);
         setUser(null);
       }
@@ -66,12 +73,14 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const result = await firebaseService.signUp(email, password, username);
       
       if (result.success && result.user) {
+        console.log("Sign up successful:", result.user);
         toast({
           title: "Account created successfully!",
           description: `Welcome ${result.user.username}!`,
         });
         return true;
       } else {
+        console.error("Sign up failed:", result.error);
         toast({
           title: "Sign up failed",
           description: result.error || "Failed to create account",
@@ -98,12 +107,14 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const result = await firebaseService.signIn(email, password);
       
       if (result.success && result.user) {
+        console.log("Sign in successful:", result.user);
         toast({
           title: "Welcome back!",
           description: `Successfully signed in as ${result.user.username}`,
         });
         return true;
       } else {
+        console.error("Sign in failed:", result.error);
         toast({
           title: "Sign in failed",
           description: result.error || "Invalid credentials",

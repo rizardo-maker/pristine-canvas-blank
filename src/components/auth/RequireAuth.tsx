@@ -2,25 +2,24 @@
 import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
+import { useAuth } from "@/context/LocalAuthContext";
 
 type RequireAuthProps = {
   children: React.ReactNode;
 };
 
 const RequireAuth = ({ children }: RequireAuthProps) => {
-  const { user, isLoading } = useFirebaseAuth();
+  const { user: firebaseUser, isLoading: firebaseLoading } = useFirebaseAuth();
+  const { user: localUser, isLoading: localLoading } = useAuth();
   const location = useLocation();
 
+  const isLoading = firebaseLoading || localLoading;
+
   useEffect(() => {
-    // This effect ensures we re-render when auth state changes
-    if (!isLoading) {
-      if (!user) {
-        console.log("User not authenticated, will redirect to sign-in");
-      } else {
-        console.log("User authenticated, allowing access");
-      }
-    }
-  }, [user, isLoading]);
+    console.log("RequireAuth - Firebase user:", firebaseUser);
+    console.log("RequireAuth - Local user:", localUser);
+    console.log("RequireAuth - Is loading:", isLoading);
+  }, [firebaseUser, localUser, isLoading]);
 
   // If still loading auth state, show a loading indicator
   if (isLoading) {
@@ -34,11 +33,16 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
     );
   }
 
+  // Check if user is authenticated (either Firebase or local)
+  const isAuthenticated = firebaseUser || localUser;
+
   // If not authenticated, redirect to sign-in page
-  if (!user) {
+  if (!isAuthenticated) {
+    console.log("User not authenticated, redirecting to sign-in");
     return <Navigate to="/sign-in" state={{ from: location }} replace />;
   }
 
+  console.log("User authenticated, rendering protected content");
   // If authenticated, render the children
   return <>{children}</>;
 };
