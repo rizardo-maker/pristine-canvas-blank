@@ -1,4 +1,3 @@
-
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -42,7 +41,11 @@ export class FirebaseService {
         createdAt: new Date().toISOString()
       };
       
-      await setDoc(doc(db, 'users', user.uid), userData);
+      try {
+        await setDoc(doc(db, 'users', user.uid), userData);
+      } catch (firestoreError) {
+        console.log("Could not save to Firestore (offline), but auth succeeded");
+      }
       
       return { success: true, user: userData };
     } catch (error: any) {
@@ -55,14 +58,21 @@ export class FirebaseService {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Get user data from Firestore
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as FirebaseUser;
-        return { success: true, user: userData };
-      } else {
-        return { success: false, error: 'User data not found' };
+      // Try to get user data from Firestore, but don't fail if offline
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data() as FirebaseUser;
+          return { success: true, user: userData };
+        } else {
+          // No user data in Firestore, but auth succeeded
+          return { success: true, user: undefined };
+        }
+      } catch (firestoreError) {
+        console.log("Firestore offline during sign in, but Firebase Auth succeeded");
+        // Return success without user data - will be handled by auth context
+        return { success: true, user: undefined };
       }
     } catch (error: any) {
       return { success: false, error: error.message };

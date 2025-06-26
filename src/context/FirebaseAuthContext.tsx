@@ -39,20 +39,32 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // User is signed in
         setFirebaseUser(firebaseUser);
         
-        // Get user data from Firestore
-        const result = await firebaseService.getUserData(firebaseUser.uid);
-        if (!result.error && result.data) {
-          console.log("User data loaded from Firestore:", result.data);
-          setUser(result.data);
-        } else {
-          // If no user data in Firestore, create basic user object
+        // Try to get user data from Firestore, but don't fail if offline
+        try {
+          const result = await firebaseService.getUserData(firebaseUser.uid);
+          if (!result.error && result.data) {
+            console.log("User data loaded from Firestore:", result.data);
+            setUser(result.data);
+          } else {
+            // If no user data in Firestore or offline, create basic user object
+            const userData: FirebaseUser = {
+              id: firebaseUser.uid,
+              username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+              email: firebaseUser.email!,
+              createdAt: new Date().toISOString()
+            };
+            console.log("Creating new user data:", userData);
+            setUser(userData);
+          }
+        } catch (error) {
+          console.log("Firestore offline, creating user from Firebase Auth data");
+          // Create user data from Firebase Auth when Firestore is offline
           const userData: FirebaseUser = {
             id: firebaseUser.uid,
             username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
             email: firebaseUser.email!,
             createdAt: new Date().toISOString()
           };
-          console.log("Creating new user data:", userData);
           setUser(userData);
         }
       } else {
@@ -106,12 +118,26 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setIsLoading(true);
       const result = await firebaseService.signIn(email, password);
       
-      if (result.success && result.user) {
-        console.log("Sign in successful:", result.user);
-        toast({
-          title: "Welcome back!",
-          description: `Successfully signed in as ${result.user.username}`,
-        });
+      if (result.success) {
+        // Sign in succeeded - Firebase Auth worked
+        console.log("Firebase Auth sign in successful");
+        
+        // If we have user data from Firestore, great
+        if (result.user) {
+          console.log("Sign in successful with Firestore data:", result.user);
+          toast({
+            title: "Welcome back!",
+            description: `Successfully signed in as ${result.user.username}`,
+          });
+        } else {
+          // If no Firestore data (offline), we'll still succeed
+          // The auth state change listener will create user data from Firebase Auth
+          console.log("Sign in successful, user data will be created from Firebase Auth");
+          toast({
+            title: "Welcome back!",
+            description: "Successfully signed in",
+          });
+        }
         return true;
       } else {
         console.error("Sign in failed:", result.error);
