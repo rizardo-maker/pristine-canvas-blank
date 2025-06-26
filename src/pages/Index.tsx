@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/LocalAuthContext';
@@ -28,12 +27,14 @@ const Index = () => {
       return;
     }
     
-    // If local user is authenticated and setup is complete, route to appropriate page
+    // If local user is authenticated and setup is complete, route to app-entry
     if (localUser && !isFirstTime) {
       console.log("Local user authenticated, routing to app-entry");
       navigate('/app-entry');
+      return;
     }
-    // If user is not authenticated or first time, they'll see the landing page
+    
+    // Otherwise, stay on landing page to let user choose auth method
   }, [localUser, firebaseUser, isLoading, isFirstTime, navigate]);
   
   if (isLoading) {
@@ -47,19 +48,7 @@ const Index = () => {
     );
   }
 
-  // If user is authenticated, don't show landing page
-  if (firebaseUser || (localUser && !isFirstTime)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-background/80">
-        <div className="text-center animate-pulse">
-          <h1 className="text-4xl font-bold mb-4">Line Manager App</h1>
-          <p className="text-xl text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // If not authenticated, show landing page with authentication options
+  // Show landing page with authentication options
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-background/80 p-4">
       <div className="text-center max-w-3xl">

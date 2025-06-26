@@ -19,7 +19,8 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
     console.log("RequireAuth - Firebase user:", firebaseUser);
     console.log("RequireAuth - Local user:", localUser);
     console.log("RequireAuth - Is loading:", isLoading);
-  }, [firebaseUser, localUser, isLoading]);
+    console.log("RequireAuth - Current location:", location.pathname);
+  }, [firebaseUser, localUser, isLoading, location.pathname]);
 
   // If still loading auth state, show a loading indicator
   if (isLoading) {
@@ -36,10 +37,11 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
   // Check if user is authenticated (either Firebase or local)
   const isAuthenticated = firebaseUser || localUser;
 
-  // If not authenticated, redirect to sign-in page
+  // If not authenticated, redirect to home page instead of sign-in
+  // This allows users to choose their authentication method
   if (!isAuthenticated) {
-    console.log("User not authenticated, redirecting to sign-in");
-    return <Navigate to="/sign-in" state={{ from: location }} replace />;
+    console.log("User not authenticated, redirecting to home");
+    return <Navigate to="/" state={{ from: location }} replace />;
   }
 
   console.log("User authenticated, rendering protected content");
