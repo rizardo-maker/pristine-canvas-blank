@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFinance } from '@/context/FinanceContext';
@@ -15,11 +16,14 @@ import {
   DollarSign,
   Mic,
   HelpCircle,
+  Bug,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSharedVoiceNavigation } from '@/context/VoiceNavigationContext';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import FirebaseConnectionTest from '@/components/debug/FirebaseConnectionTest';
 
 const Dashboard = () => {
   const { customers, payments, areas, currentAreaId, calculateTotalEarnings } = useFinance();
@@ -109,6 +113,20 @@ const Dashboard = () => {
           subtitle={currentAreaId ? "Area Overview" : "Overview of your finance operations"}
         />
         <div className="flex items-center gap-2">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="icon" title="Firebase Connection Test">
+                <Bug className="h-5 w-5" />
+                <span className="sr-only">Firebase Test</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Firebase Connection Diagnostics</DialogTitle>
+              </DialogHeader>
+              <FirebaseConnectionTest />
+            </DialogContent>
+          </Dialog>
           <ThemeToggle />
           <Button
             onClick={() => setHelpOpen(true)}
