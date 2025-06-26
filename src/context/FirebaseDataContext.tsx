@@ -1,23 +1,29 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useFirebaseAuth } from './FirebaseAuthContext';
-import { firebaseDataService, FirebaseCustomer, FirebasePayment, FirebaseArea } from '@/services/FirebaseDataService';
+import { 
+  firebaseRealtimeService, 
+  RealtimeCustomer, 
+  RealtimePayment, 
+  RealtimeArea 
+} from '@/services/FirebaseRealtimeService';
 import { useToast } from '@/hooks/use-toast';
 
 interface FirebaseDataContextType {
-  customers: FirebaseCustomer[];
-  payments: FirebasePayment[];
-  areas: FirebaseArea[];
+  customers: RealtimeCustomer[];
+  payments: RealtimePayment[];
+  areas: RealtimeArea[];
   isLoading: boolean;
   isDataSynced: boolean;
-  saveCustomer: (customer: Omit<FirebaseCustomer, 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
-  updateCustomer: (customerId: string, updates: Partial<FirebaseCustomer>) => Promise<boolean>;
+  isConnected: boolean;
+  saveCustomer: (customer: Omit<RealtimeCustomer, 'userId' | 'createdAt' | 'updatedAt' | 'id'>) => Promise<boolean>;
+  updateCustomer: (customerId: string, updates: Partial<RealtimeCustomer>) => Promise<boolean>;
   deleteCustomer: (customerId: string) => Promise<boolean>;
-  savePayment: (payment: Omit<FirebasePayment, 'userId' | 'createdAt'>) => Promise<boolean>;
-  updatePayment: (paymentId: string, updates: Partial<FirebasePayment>) => Promise<boolean>;
+  savePayment: (payment: Omit<RealtimePayment, 'userId' | 'createdAt' | 'id'>) => Promise<boolean>;
+  updatePayment: (paymentId: string, updates: Partial<RealtimePayment>) => Promise<boolean>;
   deletePayment: (paymentId: string) => Promise<boolean>;
-  saveArea: (area: Omit<FirebaseArea, 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
-  updateArea: (areaId: string, updates: Partial<FirebaseArea>) => Promise<boolean>;
+  saveArea: (area: Omit<RealtimeArea, 'userId' | 'createdAt' | 'updatedAt' | 'id'>) => Promise<boolean>;
+  updateArea: (areaId: string, updates: Partial<RealtimeArea>) => Promise<boolean>;
   deleteArea: (areaId: string) => Promise<boolean>;
   migrateLocalData: (localData: any) => Promise<boolean>;
 }
@@ -34,11 +40,12 @@ export const useFirebaseData = () => {
 
 export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, firebaseUser } = useFirebaseAuth();
-  const [customers, setCustomers] = useState<FirebaseCustomer[]>([]);
-  const [payments, setPayments] = useState<FirebasePayment[]>([]);
-  const [areas, setAreas] = useState<FirebaseArea[]>([]);
+  const [customers, setCustomers] = useState<RealtimeCustomer[]>([]);
+  const [payments, setPayments] = useState<RealtimePayment[]>([]);
+  const [areas, setAreas] = useState<RealtimeArea[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDataSynced, setIsDataSynced] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
   const { toast } = useToast();
 
   // Set up real-time subscriptions when user is authenticated
@@ -52,23 +59,40 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
 
     setIsLoading(true);
-    console.log('Setting up Firebase real-time subscriptions for user:', user.id);
+    console.log('Setting up Firebase Realtime Database subscriptions for user:', user.id);
+
+    // Subscribe to connection status
+    const unsubscribeConnection = firebaseRealtimeService.subscribeToConnectionStatus((connected) => {
+      setIsConnected(connected);
+      if (!connected) {
+        toast({
+          title: "Connection Lost",
+          description: "Attempting to reconnect to sync data...",
+          variant: "destructive",
+        });
+      } else if (isDataSynced) {
+        toast({
+          title: "Connected",
+          description: "Data sync restored",
+        });
+      }
+    });
 
     // Subscribe to customers
-    const unsubscribeCustomers = firebaseDataService.subscribeToCustomers(user.id, (newCustomers) => {
-      console.log('Received customers update:', newCustomers.length);
+    const unsubscribeCustomers = firebaseRealtimeService.subscribeToCustomers(user.id, (newCustomers) => {
+      console.log('Received real-time customers update:', newCustomers.length);
       setCustomers(newCustomers);
     });
 
     // Subscribe to payments
-    const unsubscribePayments = firebaseDataService.subscribeToPayments(user.id, (newPayments) => {
-      console.log('Received payments update:', newPayments.length);
+    const unsubscribePayments = firebaseRealtimeService.subscribeToPayments(user.id, (newPayments) => {
+      console.log('Received real-time payments update:', newPayments.length);
       setPayments(newPayments);
     });
 
     // Subscribe to areas
-    const unsubscribeAreas = firebaseDataService.subscribeToAreas(user.id, (newAreas) => {
-      console.log('Received areas update:', newAreas.length);
+    const unsubscribeAreas = firebaseRealtimeService.subscribeToAreas(user.id, (newAreas) => {
+      console.log('Received real-time areas update:', newAreas.length);
       setAreas(newAreas);
     });
 
@@ -76,25 +100,27 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setTimeout(() => {
       setIsLoading(false);
       setIsDataSynced(true);
-    }, 1000);
+      console.log('Real-time data sync established');
+    }, 1500);
 
     // Cleanup subscriptions
     return () => {
-      console.log('Cleaning up Firebase subscriptions');
+      console.log('Cleaning up Firebase Realtime Database subscriptions');
+      unsubscribeConnection();
       unsubscribeCustomers();
       unsubscribePayments();
       unsubscribeAreas();
     };
   }, [user, firebaseUser]);
 
-  const saveCustomer = async (customer: Omit<FirebaseCustomer, 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
+  const saveCustomer = async (customer: Omit<RealtimeCustomer, 'userId' | 'createdAt' | 'updatedAt' | 'id'>): Promise<boolean> => {
     if (!user) return false;
     
-    const result = await firebaseDataService.saveCustomer(user.id, customer);
+    const result = await firebaseRealtimeService.saveCustomer(user.id, customer);
     if (result.success) {
       toast({
         title: "Customer saved",
-        description: "Customer data has been saved successfully",
+        description: "Customer data synced across all devices",
       });
       return true;
     } else {
@@ -107,12 +133,14 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const updateCustomer = async (customerId: string, updates: Partial<FirebaseCustomer>): Promise<boolean> => {
-    const result = await firebaseDataService.updateCustomer(customerId, updates);
+  const updateCustomer = async (customerId: string, updates: Partial<RealtimeCustomer>): Promise<boolean> => {
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.updateCustomer(user.id, customerId, updates);
     if (result.success) {
       toast({
         title: "Customer updated",
-        description: "Customer data has been updated successfully",
+        description: "Changes synced across all devices",
       });
       return true;
     } else {
@@ -126,11 +154,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const deleteCustomer = async (customerId: string): Promise<boolean> => {
-    const result = await firebaseDataService.deleteCustomer(customerId);
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.deleteCustomer(user.id, customerId);
     if (result.success) {
       toast({
         title: "Customer deleted",
-        description: "Customer has been deleted successfully",
+        description: "Deletion synced across all devices",
       });
       return true;
     } else {
@@ -143,14 +173,14 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const savePayment = async (payment: Omit<FirebasePayment, 'userId' | 'createdAt'>): Promise<boolean> => {
+  const savePayment = async (payment: Omit<RealtimePayment, 'userId' | 'createdAt' | 'id'>): Promise<boolean> => {
     if (!user) return false;
     
-    const result = await firebaseDataService.savePayment(user.id, payment);
+    const result = await firebaseRealtimeService.savePayment(user.id, payment);
     if (result.success) {
       toast({
-        title: "Payment saved",
-        description: "Payment has been recorded successfully",
+        title: "Payment recorded",
+        description: "Payment synced across all devices",
       });
       return true;
     } else {
@@ -163,12 +193,14 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const updatePayment = async (paymentId: string, updates: Partial<FirebasePayment>): Promise<boolean> => {
-    const result = await firebaseDataService.updatePayment(paymentId, updates);
+  const updatePayment = async (paymentId: string, updates: Partial<RealtimePayment>): Promise<boolean> => {
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.updatePayment(user.id, paymentId, updates);
     if (result.success) {
       toast({
         title: "Payment updated",
-        description: "Payment has been updated successfully",
+        description: "Changes synced across all devices",
       });
       return true;
     } else {
@@ -182,11 +214,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const deletePayment = async (paymentId: string): Promise<boolean> => {
-    const result = await firebaseDataService.deletePayment(paymentId);
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.deletePayment(user.id, paymentId);
     if (result.success) {
       toast({
         title: "Payment deleted",
-        description: "Payment has been deleted successfully",
+        description: "Deletion synced across all devices",
       });
       return true;
     } else {
@@ -199,14 +233,14 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const saveArea = async (area: Omit<FirebaseArea, 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
+  const saveArea = async (area: Omit<RealtimeArea, 'userId' | 'createdAt' | 'updatedAt' | 'id'>): Promise<boolean> => {
     if (!user) return false;
     
-    const result = await firebaseDataService.saveArea(user.id, area);
+    const result = await firebaseRealtimeService.saveArea(user.id, area);
     if (result.success) {
       toast({
         title: "Area saved",
-        description: "Area has been saved successfully",
+        description: "Area synced across all devices",
       });
       return true;
     } else {
@@ -219,12 +253,14 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const updateArea = async (areaId: string, updates: Partial<FirebaseArea>): Promise<boolean> => {
-    const result = await firebaseDataService.updateArea(areaId, updates);
+  const updateArea = async (areaId: string, updates: Partial<RealtimeArea>): Promise<boolean> => {
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.updateArea(user.id, areaId, updates);
     if (result.success) {
       toast({
         title: "Area updated",
-        description: "Area has been updated successfully",
+        description: "Changes synced across all devices",
       });
       return true;
     } else {
@@ -238,11 +274,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const deleteArea = async (areaId: string): Promise<boolean> => {
-    const result = await firebaseDataService.deleteArea(areaId);
+    if (!user) return false;
+    
+    const result = await firebaseRealtimeService.deleteArea(user.id, areaId);
     if (result.success) {
       toast({
         title: "Area deleted",
-        description: "Area has been deleted successfully",
+        description: "Deletion synced across all devices",
       });
       return true;
     } else {
@@ -259,13 +297,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (!user) return false;
     
     setIsLoading(true);
-    const result = await firebaseDataService.migrateLocalData(user.id, localData);
+    const result = await firebaseRealtimeService.migrateLocalData(user.id, localData);
     setIsLoading(false);
     
     if (result.success) {
       toast({
         title: "Data migration successful",
-        description: "Your local data has been migrated to the cloud",
+        description: "Your local data is now synced across all devices",
       });
       return true;
     } else {
@@ -285,6 +323,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       areas,
       isLoading,
       isDataSynced,
+      isConnected,
       saveCustomer,
       updateCustomer,
       deleteCustomer,

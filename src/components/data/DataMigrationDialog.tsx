@@ -13,7 +13,7 @@ import { useFirebaseData } from '@/context/FirebaseDataContext';
 import { useAuth } from '@/context/LocalAuthContext';
 import { loadFromIndexedDB } from '@/utils/indexedDB';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { CheckCircle, AlertCircle, Upload, Wifi, WifiOff } from 'lucide-react';
 
 interface DataMigrationDialogProps {
   open: boolean;
@@ -24,7 +24,7 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
   const [isLoading, setIsLoading] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<'idle' | 'migrating' | 'success' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
-  const { migrateLocalData } = useFirebaseData();
+  const { migrateLocalData, isConnected } = useFirebaseData();
   const { user } = useAuth();
 
   const handleMigration = async () => {
@@ -55,7 +55,7 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
 
       setProgress(70);
 
-      // Migrate to Firebase
+      // Migrate to Firebase Realtime Database
       const success = await migrateLocalData(localData);
 
       setProgress(100);
@@ -111,19 +111,29 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Migrate Local Data to Cloud
+            Migrate to Real-time Cloud Sync
           </DialogTitle>
           <DialogDescription>
-            Migrate your existing local data to Firebase for cloud synchronization and access from multiple devices.
+            Migrate your existing local data to Firebase Realtime Database for instant synchronization across all your devices in real-time.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Connection Status */}
+          <div className={`p-3 rounded-lg flex items-center gap-2 ${isConnected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+            <span className="text-sm font-medium">
+              {isConnected ? 'Connected to Firebase' : 'Connection lost - Please check internet'}
+            </span>
+          </div>
+
           <div className="p-4 bg-muted rounded-lg">
             <h4 className="font-medium mb-2">Local Data Summary:</h4>
             <ul className="text-sm space-y-1">
               <li>• Ready to migrate local data</li>
               <li>• Total: {localRecordCount} records</li>
+              <li>• Real-time sync across all devices</li>
+              <li>• Instant updates when data changes</li>
             </ul>
           </div>
 
@@ -131,7 +141,7 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                <span className="text-sm">Migrating data...</span>
+                <span className="text-sm">Migrating to real-time database...</span>
               </div>
               <Progress value={progress} className="w-full" />
             </div>
@@ -140,14 +150,14 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
           {migrationStatus === 'success' && (
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle className="h-4 w-4" />
-              <span className="text-sm">Migration completed successfully!</span>
+              <span className="text-sm">Migration completed! Real-time sync is now active.</span>
             </div>
           )}
 
           {migrationStatus === 'error' && (
             <div className="flex items-center gap-2 text-red-600">
               <AlertCircle className="h-4 w-4" />
-              <span className="text-sm">Migration failed. Please try again.</span>
+              <span className="text-sm">Migration failed. Please check your connection and try again.</span>
             </div>
           )}
         </div>
@@ -158,9 +168,9 @@ const DataMigrationDialog = ({ open, onOpenChange }: DataMigrationDialogProps) =
           </Button>
           <Button 
             onClick={handleMigration} 
-            disabled={isLoading || localRecordCount === 0 || migrationStatus === 'success'}
+            disabled={isLoading || localRecordCount === 0 || migrationStatus === 'success' || !isConnected}
           >
-            {isLoading ? 'Migrating...' : 'Start Migration'}
+            {isLoading ? 'Migrating...' : 'Start Real-time Migration'}
           </Button>
         </DialogFooter>
       </DialogContent>
