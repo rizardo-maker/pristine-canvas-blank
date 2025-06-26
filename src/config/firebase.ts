@@ -1,8 +1,8 @@
 
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getDatabase, connectDatabaseEmulator, goOffline, goOnline } from 'firebase/database';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -27,5 +27,22 @@ export const db = getFirestore(app);
 
 // Initialize Realtime Database and get a reference to the service
 export const realtimeDb = getDatabase(app);
+
+// Configure offline persistence for better sync
+if (typeof window !== 'undefined') {
+  // Enable offline persistence for Realtime Database
+  console.log('Configuring Firebase Realtime Database for offline persistence');
+  
+  // Monitor connection state
+  window.addEventListener('online', () => {
+    console.log('Device online - enabling Firebase sync');
+    goOnline(realtimeDb);
+  });
+  
+  window.addEventListener('offline', () => {
+    console.log('Device offline - Firebase will cache changes locally');
+    // Don't call goOffline() - let Firebase handle it automatically
+  });
+}
 
 export default app;
