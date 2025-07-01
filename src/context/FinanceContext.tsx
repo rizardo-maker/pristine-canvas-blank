@@ -35,6 +35,13 @@ export interface Customer {
   totalAmountGiven: number;
   dailyAmount?: number;
   interestAmount?: number;
+  
+  // Properties from old local storage system
+  paymentCategory?: 'daily' | 'weekly' | 'monthly';
+  numberOfDays?: number;
+  numberOfWeeks?: number;
+  numberOfMonths?: number;
+  interestPercentage?: number;
 }
 
 export interface Payment {
@@ -48,6 +55,12 @@ export interface Payment {
   createdAt: string;
   userId: string;
   agentName?: string;
+  
+  // Additional properties for Firebase compatibility
+  area?: string;
+  paymentMethod?: 'cash' | 'online' | 'check';
+  notes?: string;
+  receiptNumber?: string;
 }
 
 export interface Area {
@@ -56,6 +69,13 @@ export interface Area {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  
+  // Additional properties for Firebase compatibility
+  description?: string;
+  totalCustomers?: number;
+  totalAmount?: number;
+  collectedAmount?: number;
+  pendingAmount?: number;
 }
 
 interface FinanceContextType {
@@ -80,6 +100,18 @@ interface FinanceContextType {
   getAreaById: (areaId: string) => Area | undefined;
   setCurrentAreaId: (areaId: string | null) => void;
   
+  // Additional missing methods
+  setCurrentArea: (areaId: string | null) => void;
+  getAreaCustomers: (areaId: string) => Customer[];
+  getAreaPayments: (areaId: string) => Payment[];
+  getCurrentAreaPayments: () => Payment[];
+  getCustomerPayments: (customerId: string) => Payment[];
+  updateCustomerPaymentStatus: (customerId: string, status: string) => Promise<boolean>;
+  calculateAllPenalties: () => void;
+  calculateTotalEarnings: () => number;
+  getCurrentAreaDailyEarnings: (date: string) => number;
+  deleteDailyInterestEarning: (earningId: string) => Promise<boolean>;
+  
   // Interest calculation methods
   calculateDailyInterestEarnings: (date: string) => number;
   calculateWeeklyInterestEarnings: (weekStartDate: string) => number;
@@ -98,9 +130,9 @@ export const useFinance = () => {
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
-    customers,
-    payments,
-    areas,
+    customers: firebaseCustomers,
+    payments: firebasePayments,
+    areas: firebaseAreas,
     isLoading,
     isConnected,
     saveCustomer,
@@ -116,16 +148,93 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
 
+  // Convert Firebase types to local types with proper mapping
+  const customers: Customer[] = firebaseCustomers.map(customer => ({
+    ...customer,
+    serialNumber: customer.id || '',
+    issuedDate: customer.startDate || customer.createdAt,
+    isFullyPaid: customer.status === 'completed',
+    totalAmountToBePaid: customer.loanAmount + (customer.loanAmount * 0.1), // Simple interest calculation
+    penaltyAmount: 0,
+    totalPaid: customer.loanAmount - customer.balanceAmount,
+    totalAmountGiven: customer.loanAmount,
+    dailyAmount: customer.installmentAmount,
+    interestAmount: customer.loanAmount * 0.1,
+    paymentCategory: customer.collectionType,
+    numberOfDays: customer.collectionType === 'daily' ? customer.totalInstallments : undefined,
+    numberOfWeeks: customer.collectionType === 'weekly' ? Math.ceil(customer.totalInstallments / 7) : undefined,
+    numberOfMonths: customer.collectionType === 'monthly' ? Math.ceil(customer.totalInstallments / 30) : undefined,
+    interestPercentage: 10
+  }));
+
+  const payments: Payment[] = firebasePayments.map(payment => ({
+    ...payment,
+    serialNumber: payment.customerId || payment.id,
+    area: payment.area || '',
+    paymentMethod: payment.paymentMethod || 'cash'
+  }));
+
+  const areas: Area[] = firebaseAreas.map(area => ({
+    ...area,
+    description: area.description || '',
+    totalCustomers: area.totalCustomers || 0,
+    totalAmount: area.totalAmount || 0,
+    collectedAmount: area.collectedAmount || 0,
+    pendingAmount: area.pendingAmount || 0
+  }));
+
   const addCustomer = async (customer: Omit<Customer, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
-    return await saveCustomer(customer);
+    // Map to Firebase format
+    const firebaseCustomer = {
+      name: customer.name,
+      area: customer.area,
+      mobile: customer.mobile,
+      loanAmount: customer.loanAmount,
+      installmentAmount: customer.installmentAmount,
+      collectionType: customer.collectionType,
+      startDate: customer.startDate,
+      endDate: customer.endDate,
+      address: customer.address,
+      guarantor: customer.guarantor,
+      guarantorMobile: customer.guarantorMobile,
+      totalInstallments: customer.totalInstallments,
+      paidInstallments: customer.paidInstallments,
+      balanceAmount: customer.balanceAmount,
+      status: customer.status
+    };
+    
+    return await saveCustomer(firebaseCustomer);
   };
 
   const addPayment = async (payment: Omit<Payment, 'id' | 'userId' | 'createdAt'>): Promise<boolean> => {
-    return await savePayment(payment);
+    // Map to Firebase format
+    const firebasePayment = {
+      customerId: payment.customerId,
+      customerName: payment.customerName,
+      amount: payment.amount,
+      date: payment.date,
+      area: payment.area || '',
+      collectionType: payment.collectionType,
+      paymentMethod: payment.paymentMethod || 'cash',
+      notes: payment.notes,
+      receiptNumber: payment.receiptNumber
+    };
+    
+    return await savePayment(firebasePayment);
   };
 
   const addArea = async (area: Omit<Area, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
-    return await saveArea(area);
+    // Map to Firebase format
+    const firebaseArea = {
+      name: area.name,
+      description: area.description || '',
+      totalCustomers: area.totalCustomers || 0,
+      totalAmount: area.totalAmount || 0,
+      collectedAmount: area.collectedAmount || 0,
+      pendingAmount: area.pendingAmount || 0
+    };
+    
+    return await saveArea(firebaseArea);
   };
 
   // Area management methods
@@ -136,6 +245,54 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getAreaById = (areaId: string): Area | undefined => {
     return areas.find(area => area.id === areaId);
+  };
+
+  const setCurrentArea = (areaId: string | null) => {
+    setCurrentAreaId(areaId);
+  };
+
+  const getAreaCustomers = (areaId: string): Customer[] => {
+    return customers.filter(customer => customer.area === areaId);
+  };
+
+  const getAreaPayments = (areaId: string): Payment[] => {
+    const areaCustomers = getAreaCustomers(areaId);
+    const areaCustomerIds = areaCustomers.map(c => c.id);
+    return payments.filter(payment => areaCustomerIds.includes(payment.customerId));
+  };
+
+  const getCurrentAreaPayments = (): Payment[] => {
+    if (!currentAreaId) return payments;
+    return getAreaPayments(currentAreaId);
+  };
+
+  const getCustomerPayments = (customerId: string): Payment[] => {
+    return payments.filter(payment => payment.customerId === customerId);
+  };
+
+  const updateCustomerPaymentStatus = async (customerId: string, status: string): Promise<boolean> => {
+    return await updateCustomer(customerId, { status: status as any });
+  };
+
+  const calculateAllPenalties = () => {
+    // Placeholder implementation
+    console.log('Calculating all penalties...');
+  };
+
+  const calculateTotalEarnings = (): number => {
+    return payments.reduce((sum, payment) => sum + payment.amount, 0);
+  };
+
+  const getCurrentAreaDailyEarnings = (date: string): number => {
+    const areaPayments = getCurrentAreaPayments();
+    return areaPayments
+      .filter(payment => payment.date === date)
+      .reduce((sum, payment) => sum + payment.amount, 0);
+  };
+
+  const deleteDailyInterestEarning = async (earningId: string): Promise<boolean> => {
+    // This would delete a specific earning record
+    return await deletePayment(earningId);
   };
 
   // Interest calculation methods
@@ -203,6 +360,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       getCurrentAreaCustomers,
       getAreaById,
       setCurrentAreaId,
+      setCurrentArea,
+      getAreaCustomers,
+      getAreaPayments,
+      getCurrentAreaPayments,
+      getCustomerPayments,
+      updateCustomerPaymentStatus,
+      calculateAllPenalties,
+      calculateTotalEarnings,
+      getCurrentAreaDailyEarnings,
+      deleteDailyInterestEarning,
       calculateDailyInterestEarnings,
       calculateWeeklyInterestEarnings,
       calculateMonthlyInterestEarnings
