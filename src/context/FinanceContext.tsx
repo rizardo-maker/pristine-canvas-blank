@@ -26,6 +26,19 @@ export interface Customer {
   status: 'active' | 'completed' | 'defaulted';
   createdAt: string;
   updatedAt: string;
+  // Additional properties for compatibility
+  totalAmountGiven: number;
+  totalAmountToBePaid: number;
+  totalPaid: number;
+  interestAmount?: number;
+  interestPercentage?: number;
+  penaltyAmount?: number;
+  dailyAmount?: number;
+  paymentCategory?: 'daily' | 'weekly' | 'monthly';
+  issuedDate: string;
+  deadlineDate?: string;
+  isFullyPaid: boolean;
+  areaId?: string;
 }
 
 export interface Payment {
@@ -48,6 +61,18 @@ export interface Area {
   updatedAt: string;
 }
 
+export interface DailyEarning {
+  id: string;
+  date: string;
+  totalInterestEarned: number;
+  totalPrincipleEarned: number;
+  isWeeklyTotal?: boolean;
+  isMonthlyTotal?: boolean;
+  weekStartDate?: string;
+  monthYear?: string;
+  areaId?: string;
+}
+
 interface FinanceContextType {
   customers: Customer[];
   payments: Payment[];
@@ -67,6 +92,15 @@ interface FinanceContextType {
   getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
   setCurrentAreaId: (areaId: string | null) => void;
   syncStatus: 'idle' | 'syncing' | 'completed' | 'error';
+  // Additional methods
+  getCurrentAreaCustomers: () => Customer[];
+  getAreaById: (id: string) => Area | undefined;
+  setCurrentArea: (area: Area | null) => void;
+  calculateDailyInterestEarnings: () => DailyEarning;
+  calculateWeeklyInterestEarnings: () => DailyEarning;
+  calculateMonthlyInterestEarnings: () => DailyEarning;
+  getCurrentAreaDailyEarnings: () => DailyEarning[];
+  deleteDailyInterestEarning: (id: string) => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -85,40 +119,61 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const { syncStatus, isFirebaseReady } = useDataSync();
   const { toast } = useToast();
   const [currentAreaId, setCurrentAreaId] = useLocalStorage<string | null>('currentAreaId', null);
+  const [dailyEarnings, setDailyEarnings] = useState<DailyEarning[]>([]);
 
   // Convert Firebase data to local interfaces
-  const customers: Customer[] = firebaseData.customers.map(customer => ({
-    id: customer.id,
-    name: customer.name,
-    serialNumber: customer.serialNumber || '',
-    area: customer.area,
-    mobile: customer.mobile,
-    loanAmount: customer.loanAmount,
-    installmentAmount: customer.installmentAmount,
-    collectionType: customer.collectionType,
-    startDate: customer.startDate,
-    endDate: customer.endDate,
-    address: customer.address,
-    guarantor: customer.guarantor,
-    guarantorMobile: customer.guarantorMobile,
-    totalInstallments: customer.totalInstallments,
-    paidInstallments: customer.paidInstallments,
-    balanceAmount: customer.balanceAmount,
-    status: customer.status,
-    createdAt: customer.createdAt,
-    updatedAt: customer.updatedAt
-  }));
+  const customers: Customer[] = firebaseData.customers.map(customer => {
+    const totalAmountGiven = customer.loanAmount || 0;
+    const interestAmount = (customer.loanAmount || 0) * 0.1; // 10% default interest
+    const totalAmountToBePaid = totalAmountGiven + interestAmount;
+    const totalPaid = customer.paidInstallments * (customer.installmentAmount || 0);
+    
+    return {
+      id: customer.id,
+      name: customer.name,
+      serialNumber: customer.id.slice(-8), // Use last 8 chars of ID as serial
+      area: customer.area,
+      mobile: customer.mobile,
+      loanAmount: customer.loanAmount,
+      installmentAmount: customer.installmentAmount,
+      collectionType: customer.collectionType,
+      startDate: customer.startDate,
+      endDate: customer.endDate,
+      address: customer.address,
+      guarantor: customer.guarantor,
+      guarantorMobile: customer.guarantorMobile,
+      totalInstallments: customer.totalInstallments,
+      paidInstallments: customer.paidInstallments,
+      balanceAmount: customer.balanceAmount,
+      status: customer.status,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      // Additional calculated properties
+      totalAmountGiven,
+      totalAmountToBePaid,
+      totalPaid,
+      interestAmount,
+      interestPercentage: 10,
+      penaltyAmount: 0,
+      dailyAmount: customer.installmentAmount,
+      paymentCategory: customer.collectionType,
+      issuedDate: customer.startDate,
+      deadlineDate: customer.endDate,
+      isFullyPaid: totalPaid >= totalAmountToBePaid,
+      areaId: customer.area
+    };
+  });
 
   const payments: Payment[] = firebaseData.payments.map(payment => ({
     id: payment.id,
     customerId: payment.customerId,
     customerName: payment.customerName,
-    serialNumber: payment.serialNumber || '',
+    serialNumber: payment.customerId.slice(-8), // Use last 8 chars of customer ID
     amount: payment.amount,
     date: payment.date,
     collectionType: payment.collectionType,
-    agentName: payment.agentName || 'Not specified',
-    areaId: payment.areaId
+    agentName: payment.area || 'Not specified', // Use area as agent name temporarily
+    areaId: payment.area
   }));
 
   const areas: Area[] = firebaseData.areas.map(area => ({
@@ -154,8 +209,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       totalInstallments: customer.totalInstallments,
       paidInstallments: customer.paidInstallments,
       balanceAmount: customer.balanceAmount,
-      status: customer.status,
-      serialNumber: customer.serialNumber
+      status: customer.status
     });
 
     if (!success) {
@@ -203,10 +257,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       date: payment.date,
       area: payment.areaId || 'default',
       collectionType: payment.collectionType,
-      paymentMethod: 'cash',
-      serialNumber: payment.serialNumber,
-      agentName: payment.agentName,
-      areaId: payment.areaId
+      paymentMethod: 'cash'
     });
 
     if (!success) {
@@ -295,6 +346,76 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return customers.find(customer => customer.serialNumber === serialNumber);
   };
 
+  // Additional helper methods
+  const getCurrentAreaCustomers = (): Customer[] => {
+    if (!currentAreaId) return customers;
+    return customers.filter(customer => customer.areaId === currentAreaId || customer.area === currentAreaId);
+  };
+
+  const getAreaById = (id: string): Area | undefined => {
+    return areas.find(area => area.id === id);
+  };
+
+  const setCurrentArea = (area: Area | null) => {
+    setCurrentAreaId(area ? area.id : null);
+  };
+
+  const calculateDailyInterestEarnings = (): DailyEarning => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayPayments = payments.filter(p => p.date === today);
+    const totalInterest = todayPayments.reduce((sum, p) => sum + (p.amount * 0.1), 0);
+    const totalPrinciple = todayPayments.reduce((sum, p) => sum + (p.amount * 0.9), 0);
+    
+    return {
+      id: `daily-${today}`,
+      date: today,
+      totalInterestEarned: totalInterest,
+      totalPrincipleEarned: totalPrinciple,
+      areaId: currentAreaId || undefined
+    };
+  };
+
+  const calculateWeeklyInterestEarnings = (): DailyEarning => {
+    const today = new Date();
+    const weekStart = new Date(today.setDate(today.getDate() - today.getDay()));
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+    
+    return {
+      id: `weekly-${weekStartStr}`,
+      date: weekStartStr,
+      totalInterestEarned: 0,
+      totalPrincipleEarned: 0,
+      isWeeklyTotal: true,
+      weekStartDate: weekStartStr,
+      areaId: currentAreaId || undefined
+    };
+  };
+
+  const calculateMonthlyInterestEarnings = (): DailyEarning => {
+    const today = new Date();
+    const monthYear = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+    
+    return {
+      id: `monthly-${monthYear}`,
+      date: `${monthYear}-01`,
+      totalInterestEarned: 0,
+      totalPrincipleEarned: 0,
+      isMonthlyTotal: true,
+      monthYear,
+      areaId: currentAreaId || undefined
+    };
+  };
+
+  const getCurrentAreaDailyEarnings = (): DailyEarning[] => {
+    return dailyEarnings.filter(earning => 
+      !currentAreaId || earning.areaId === currentAreaId
+    );
+  };
+
+  const deleteDailyInterestEarning = (id: string) => {
+    setDailyEarnings(prev => prev.filter(earning => earning.id !== id));
+  };
+
   const value: FinanceContextType = {
     customers,
     payments,
@@ -313,7 +434,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     deleteArea,
     getCustomerBySerialNumber,
     setCurrentAreaId,
-    syncStatus
+    syncStatus,
+    getCurrentAreaCustomers,
+    getAreaById,
+    setCurrentArea,
+    calculateDailyInterestEarnings,
+    calculateWeeklyInterestEarnings,
+    calculateMonthlyInterestEarnings,
+    getCurrentAreaDailyEarnings,
+    deleteDailyInterestEarning
   };
 
   return (
