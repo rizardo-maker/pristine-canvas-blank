@@ -1,104 +1,69 @@
 
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { FinanceProvider } from "./context/FinanceContext";
-import { AuthProvider } from "./context/LocalAuthContext";
-import { FirebaseAuthProvider } from "./context/FirebaseAuthContext";
-import { FirebaseDataProvider } from "./context/FirebaseDataContext";
-import { useEffect } from "react";
-import { initializeMobileApp } from "./utils/mobileUtils";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from '@/components/ui/toaster';
+import { FirebaseAuthProvider } from '@/context/FirebaseAuthContext';
+import { FirebaseDataProvider } from '@/context/FirebaseDataContext';
+import { FinanceProvider } from '@/context/FinanceContext';
+import AuthScreen from '@/components/auth/AuthScreen';
+import Layout from '@/components/layout/Layout';
+import Dashboard from '@/pages/Dashboard';
+import CustomerManagement from '@/pages/CustomerManagement';
+import PaymentEntry from '@/pages/PaymentEntry';
+import DailyCollections from '@/pages/collections/DailyCollections';
+import WeeklyCollections from '@/pages/collections/WeeklyCollections';
+import MonthlyCollections from '@/pages/collections/MonthlyCollections';
+import Reports from '@/pages/Reports';
+import Settings from '@/pages/Settings';
+import BatchPaymentEntry from '@/pages/BatchPaymentEntry';
+import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 
-import Layout from "./components/layout/Layout";
-import Dashboard from "./pages/Dashboard";
-import Customers from "./pages/Customers";
-import DailyCollections from "./pages/collections/DailyCollections";
-import WeeklyCollections from "./pages/collections/WeeklyCollections";
-import MonthlyCollections from "./pages/collections/MonthlyCollections";
-import Posting from "./pages/Posting";
-import Reports from "./pages/Reports";
-import BalanceSheet from "./pages/BalanceSheet";
-import NotFound from "./pages/NotFound";
-import CustomerDetail from "./pages/CustomerDetail";
-import PostingDetails from "./pages/PostingDetails";
-import Areas from "./pages/Areas";
-import LocalAuth from "./pages/auth/LocalAuth";
-import SignIn from "./pages/auth/SignIn";
-import SignUp from "./pages/auth/SignUp";
-import RequireAuth from "./components/auth/RequireAuth";
-import Index from "./pages/Index";
-import { VoiceNavigationProvider } from "./context/VoiceNavigationContext";
-import { voiceNavRoutes } from "./config/voice-nav-routes";
-import AppEntry from "./pages/AppEntry";
-import AreaReports from "./pages/AreaReports";
+const AppContent = () => {
+  const { user, isLoading } = useFirebaseAuth();
 
-const queryClient = new QueryClient();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  if (!user) {
+    return <AuthScreen />;
+  }
+
   return (
-    <RequireAuth>
-      <VoiceNavigationProvider routes={voiceNavRoutes}>
-        <Layout>{children}</Layout>
-      </VoiceNavigationProvider>
-    </RequireAuth>
+    <FirebaseDataProvider>
+      <FinanceProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/customers" element={<CustomerManagement />} />
+            <Route path="/payments" element={<PaymentEntry />} />
+            <Route path="/batch-payments" element={<BatchPaymentEntry />} />
+            <Route path="/collections/daily" element={<DailyCollections />} />
+            <Route path="/collections/weekly" element={<WeeklyCollections />} />
+            <Route path="/collections/monthly" element={<MonthlyCollections />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </FinanceProvider>
+    </FirebaseDataProvider>
   );
 };
 
-const App = () => {
-  useEffect(() => {
-    initializeMobileApp();
-  }, []);
-
+function App() {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
-      <QueryClientProvider client={queryClient}>
-        <FirebaseAuthProvider>
-          <FirebaseDataProvider>
-            <AuthProvider>
-              <FinanceProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Sonner />
-                  <BrowserRouter>
-                    <Routes>
-                      {/* Public routes */}
-                      <Route path="/" element={<Index />} />
-                      <Route path="/auth" element={<LocalAuth />} />
-                      <Route path="/sign-in" element={<SignIn />} />
-                      <Route path="/sign-up" element={<SignUp />} />
-                      
-                      {/* Entry point for authenticated users */}
-                      <Route path="/app-entry" element={<ProtectedRoute><AppEntry /></ProtectedRoute>} />
-
-                      {/* Protected routes */}
-                      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                      <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-                      <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
-                      <Route path="/collections/daily" element={<ProtectedRoute><DailyCollections /></ProtectedRoute>} />
-                      <Route path="/collections/weekly" element={<ProtectedRoute><WeeklyCollections /></ProtectedRoute>} />
-                      <Route path="/collections/monthly" element={<ProtectedRoute><MonthlyCollections /></ProtectedRoute>} />
-                      <Route path="/posting" element={<ProtectedRoute><Posting /></ProtectedRoute>} />
-                      <Route path="/posting/:date" element={<ProtectedRoute><PostingDetails /></ProtectedRoute>} />
-                      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-                      <Route path="/areas/:areaId/reports" element={<ProtectedRoute><AreaReports /></ProtectedRoute>} />
-                      <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
-                      <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
-                      
-                      {/* Not Found Route */}
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </BrowserRouter>
-                </TooltipProvider>
-              </FinanceProvider>
-            </AuthProvider>
-          </FirebaseDataProvider>
-        </FirebaseAuthProvider>
-      </QueryClientProvider>
-    </NextThemesProvider>
+    <FirebaseAuthProvider>
+      <Router>
+        <AppContent />
+        <Toaster />
+      </Router>
+    </FirebaseAuthProvider>
   );
-};
+}
 
 export default App;
