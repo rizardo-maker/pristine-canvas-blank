@@ -1,6 +1,6 @@
+
 import { saveAs } from 'file-saver';
 import { Customer, Payment, Area } from '@/context/FinanceContext';
-import { loadFromIndexedDB, saveToIndexedDB } from './indexedDB';
 import { toast } from '@/hooks/use-toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { isMobile } from '@/utils/mobileUtils';
@@ -21,7 +21,7 @@ interface ExportData {
 /**
  * Export all app data to a JSON file
  */
-export const exportData = async (userId: string): Promise<boolean> => {
+export const exportData = async (customers: Customer[], payments: Payment[], areas: Area[]): Promise<boolean> => {
   try {
     // Show loading toast
     toast({
@@ -29,12 +29,7 @@ export const exportData = async (userId: string): Promise<boolean> => {
       description: "Please wait while we prepare your data.",
     });
 
-    // Load all data from IndexedDB
-    const customersResult = await loadFromIndexedDB<Customer[]>('customers', userId);
-    const paymentsResult = await loadFromIndexedDB<Payment[]>('payments', userId);
-    const areasResult = await loadFromIndexedDB<Area[]>('areas', userId);
-    
-    if (!customersResult.data && !paymentsResult.data && !areasResult.data) {
+    if (!customers.length && !payments.length && !areas.length) {
       toast({
         title: "No data to export",
         description: "There is no data to export at this time.",
@@ -45,13 +40,13 @@ export const exportData = async (userId: string): Promise<boolean> => {
     
     // Create export data structure
     const exportData: ExportData = {
-      version: "1.2", // Incrementing version for better tracking
+      version: "1.2",
       exportDate: new Date().toISOString(),
-      deviceId: localStorage.getItem('finance_device_id') || 'unknown',
+      deviceId: getDeviceId(),
       data: {
-        customers: customersResult.data || [],
-        payments: paymentsResult.data || [],
-        areas: areasResult.data || [],
+        customers,
+        payments,
+        areas,
       }
     };
     
@@ -110,7 +105,6 @@ export const exportData = async (userId: string): Promise<boolean> => {
 
     // Fallback to web-based download
     try {
-      // Create blob and download
       const blob = new Blob([jsonData], { type: 'application/json' });
       saveAs(blob, filename);
       
@@ -150,12 +144,12 @@ export const exportData = async (userId: string): Promise<boolean> => {
 };
 
 /**
- * Processes imported data from a JSON string.
+ * Processes imported data from a JSON string and returns it for Firebase upload.
  */
-const importDataFromString = async (jsonString: string, userId: string): Promise<boolean> => {
+const importDataFromString = async (jsonString: string): Promise<{ success: boolean; data?: ExportData['data']; error?: string }> => {
   try {
     toast({
-      title: "Importing data...",
+      title: "Processing import file...",
       description: "Please wait while we process your file.",
     });
 
@@ -164,145 +158,60 @@ const importDataFromString = async (jsonString: string, userId: string): Promise
     try {
       importedData = JSON.parse(jsonString) as ExportData;
     } catch (e) {
-      toast({
-        title: "Invalid file format",
-        description: "The selected file is not valid JSON.",
-        variant: "destructive",
-      });
-      return false;
+      return { success: false, error: "The selected file is not valid JSON." };
     }
     
     if (!importedData || !importedData.data) {
-      toast({
-        title: "Invalid file format",
-        description: "The selected file is not a valid finance app export.",
-        variant: "destructive",
-      });
-      return false;
+      return { success: false, error: "The selected file is not a valid finance app export." };
     }
     
     if (!importedData.data.customers || !Array.isArray(importedData.data.customers) ||
         !importedData.data.payments || !Array.isArray(importedData.data.payments) ||
         !importedData.data.areas || !Array.isArray(importedData.data.areas)) {
-      toast({
-        title: "Invalid data structure",
-        description: "The export file is missing required data structures.",
-        variant: "destructive",
-      });
-      return false;
+      return { success: false, error: "The export file is missing required data structures." };
     }
     
-    const currentCustomersResult = await loadFromIndexedDB<Customer[]>('customers', userId);
-    const currentPaymentsResult = await loadFromIndexedDB<Payment[]>('payments', userId);
-    const currentAreasResult = await loadFromIndexedDB<Area[]>('areas', userId);
-    
-    const currentCustomers = currentCustomersResult.data || [];
-    const currentPayments = currentPaymentsResult.data || [];
-    const currentAreas = currentAreasResult.data || [];
-    
-    const mergedCustomers = mergeArrays(currentCustomers, importedData.data.customers || [], 'id');
-    const mergedPayments = mergeArrays(currentPayments, importedData.data.payments || [], 'id');
-    const mergedAreas = mergeArrays(currentAreas, importedData.data.areas || [], 'id');
-    
-    const newCustomers = mergedCustomers.length - currentCustomers.length;
-    const newPayments = mergedPayments.length - currentPayments.length;
-    const newAreas = mergedAreas.length - currentAreas.length;
-    
-    await saveToIndexedDB('customers', mergedCustomers, userId);
-    await saveToIndexedDB('payments', mergedPayments, userId);
-    await saveToIndexedDB('areas', mergedAreas, userId);
-    
-    localStorage.setItem('last_import_date', new Date().toISOString());
-    localStorage.setItem('last_import_device', importedData.deviceId || 'unknown');
-    
-    toast({
-      title: "Data imported successfully",
-      description: `Imported ${newCustomers} new customers, ${newPayments} new payments, and ${newAreas} new areas.`,
-    });
-    
-    return true;
+    return { success: true, data: importedData.data };
   } catch (error) {
     console.error("Import error:", error);
-    toast({
-      title: "Import failed",
-      description: "Failed to import data. Check the file format and try again.",
-      variant: "destructive",
-    });
-    return false;
+    return { success: false, error: "Failed to process import file." };
   }
 };
 
 /**
  * Import data from a JSON file (for web)
  */
-export const importData = async (file: File, userId: string): Promise<boolean> => {
+export const importData = async (file: File): Promise<{ success: boolean; data?: ExportData['data']; error?: string }> => {
   try {
     if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      toast({
-        title: "File too large",
-        description: "Maximum file size is 10MB.",
-        variant: "destructive",
-      });
-      return false;
+      return { success: false, error: "Maximum file size is 10MB." };
     }
     
     const text = await file.text();
-    return await importDataFromString(text, userId);
+    return await importDataFromString(text);
   } catch (error) {
     console.error("Import file read error:", error);
-    toast({
-      title: "Import Failed",
-      description: "Could not read the selected file.",
-      variant: "destructive"
-    });
-    return false;
+    return { success: false, error: "Could not read the selected file." };
   }
 };
 
 /**
- * Helper function to merge arrays by ID with improved efficiency
+ * Create data import dialog handler that returns the parsed data
  */
-function mergeArrays<T extends { id: string }>(current: T[], imported: T[], idField: keyof T): T[] {
-  // Create a map of existing IDs for efficient lookup
-  const existingMap = new Map<string, boolean>();
-  current.forEach(item => existingMap.set(String(item[idField]), true));
-  
-  // Copy existing items
-  const merged: T[] = [...current];
-  
-  // Add only new items from imported data
-  for (const item of imported) {
-    if (!item[idField]) continue; // Skip items without an ID
-    
-    const id = String(item[idField]);
-    if (!existingMap.has(id)) {
-      merged.push(item);
-      existingMap.set(id, true); // Update map to prevent duplicates
-    }
-  }
-  
-  return merged;
-}
-
-/**
- * Create data import dialog handler
- */
-export const handleImportClick = (userId: string, onComplete?: () => void) => {
-  const handleSuccess = () => {
-    if (onComplete) {
-      onComplete();
-    } else {
-      window.location.reload();
-    }
-  };
-
+export const handleImportClick = (onComplete: (data: ExportData['data']) => void) => {
   if (isTauri()) {
     invoke<string>('open_file_dialog')
       .then(async (content) => {
         if (content) {
-          const success = await importDataFromString(content, userId);
-          if (success) {
-            handleSuccess();
+          const result = await importDataFromString(content);
+          if (result.success && result.data) {
+            onComplete(result.data);
+          } else {
+            toast({
+              title: "Import Failed",
+              description: result.error || "Could not process the file.",
+              variant: "destructive",
+            });
           }
         } else {
           toast({ title: "Import Cancelled", description: "No file was selected." });
@@ -347,10 +256,16 @@ export const handleImportClick = (userId: string, onComplete?: () => void) => {
       return;
     }
     
-    const success = await importData(file, userId);
+    const result = await importData(file);
     
-    if (success) {
-      handleSuccess();
+    if (result.success && result.data) {
+      onComplete(result.data);
+    } else {
+      toast({
+        title: "Import Failed",
+        description: result.error || "Could not process the file.",
+        variant: "destructive",
+      });
     }
   };
   
@@ -374,6 +289,20 @@ export const validateImportFile = (file: File): { valid: boolean, error?: string
   }
   
   return { valid: true };
+};
+
+/**
+ * Generate or retrieve a unique device ID
+ */
+export const getDeviceId = (): string => {
+  let deviceId = localStorage.getItem('finance_device_id');
+  
+  if (!deviceId) {
+    deviceId = 'device_' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('finance_device_id', deviceId);
+  }
+  
+  return deviceId;
 };
 
 /**
