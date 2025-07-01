@@ -13,6 +13,46 @@ export interface SyncMetadata {
   deviceId: string;
 }
 
+// Define proper types for the data structures
+interface LocalCustomer {
+  id: string;
+  name: string;
+  area: string;
+  mobile: string;
+  address: string;
+  loanAmount: number;
+  installmentAmount: number;
+  collectionType: 'daily' | 'weekly' | 'monthly';
+  startDate: string;
+  endDate: string;
+  totalInstallments: number;
+  paidInstallments: number;
+  balanceAmount: number;
+  status: 'active' | 'completed' | 'defaulted';
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+}
+
+interface LocalPayment {
+  id: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  date: string;
+  collectionType: 'daily' | 'weekly' | 'monthly';
+  createdAt: string;
+  userId: string;
+}
+
+interface LocalArea {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+}
+
 export const loadFromIndexedDB = async <T>(
   storeName: string, 
   userId: string
