@@ -1,145 +1,141 @@
 
 import { Payment, Customer } from '@/context/FinanceContext';
-import { generatePaymentBatch } from './idGenerator';
+import { toast } from 'sonner';
 
-export interface PaymentEntry {
-  id: string;
+export interface PaymentBatchEntry {
   serialNumber: string;
   customerName: string;
-  customerId: string;
   amount: number;
   agentName: string;
+  isValid: boolean;
+  error?: string;
+  customer?: Customer;
 }
 
-export interface BatchPaymentData {
-  date: string;
-  collectionType: 'daily' | 'weekly' | 'monthly';
-  areaId?: string;
-}
-
-export interface BatchProcessResult {
+export interface PaymentBatchResult {
   success: boolean;
-  successfulPayments: Payment[];
-  failedPayments: { entry: PaymentEntry; error: string }[];
-  totalProcessed: number;
+  processedCount: number;
+  failedCount: number;
+  errors: string[];
+  payments: Payment[];
 }
 
-export class PaymentBatchProcessor {
-  private getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
-  private currentAreaId: string | null;
-
-  constructor(
-    getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined,
-    currentAreaId: string | null
-  ) {
-    this.getCustomerBySerialNumber = getCustomerBySerialNumber;
-    this.currentAreaId = currentAreaId;
+export const validatePaymentEntry = (
+  entry: Omit<PaymentBatchEntry, 'isValid' | 'error' | 'customer'>,
+  customers: Customer[]
+): PaymentBatchEntry => {
+  const errors: string[] = [];
+  
+  // Find customer by serial number
+  const customer = customers.find(c => c.serialNumber === entry.serialNumber);
+  
+  if (!customer) {
+    errors.push(`Customer with serial number ${entry.serialNumber} not found`);
   }
+  
+  if (!entry.customerName.trim()) {
+    errors.push('Customer name is required');
+  }
+  
+  if (!entry.amount || entry.amount <= 0) {
+    errors.push('Amount must be greater than 0');
+  }
+  
+  if (!entry.agentName.trim()) {
+    errors.push('Agent name is required');
+  }
+  
+  // Check if customer name matches
+  if (customer && customer.name.toLowerCase() !== entry.customerName.toLowerCase()) {
+    errors.push(`Customer name mismatch. Expected: ${customer.name}, Got: ${entry.customerName}`);
+  }
+  
+  return {
+    ...entry,
+    isValid: errors.length === 0,
+    error: errors.length > 0 ? errors.join(', ') : undefined,
+    customer
+  };
+};
 
-  async processBatch(
-    entries: PaymentEntry[],
-    batchData: BatchPaymentData
-  ): Promise<BatchProcessResult> {
-    console.log('Starting batch payment processing for', entries.length, 'entries');
-    
-    const result: BatchProcessResult = {
-      success: false,
-      successfulPayments: [],
-      failedPayments: [],
-      totalProcessed: 0
-    };
-
-    if (entries.length === 0) {
-      console.warn('No entries to process');
-      return result;
-    }
-
-    // Generate unique IDs for all payments upfront
-    const paymentIds = generatePaymentBatch(entries.length);
-    console.log('Generated unique IDs:', paymentIds);
-
-    // Validate all entries first
-    const validationResults = this.validateEntries(entries);
-    if (validationResults.length > 0) {
-      console.error('Validation errors found:', validationResults);
-      result.failedPayments = validationResults;
-      return result;
-    }
-
-    // Process each entry
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const paymentId = paymentIds[i];
+export const processBatchPayments = async (
+  entries: PaymentBatchEntry[],
+  collectionType: 'daily' | 'weekly' | 'monthly',
+  date: string,
+  addPayment: (payment: Omit<Payment, 'id' | 'userId' | 'createdAt'>) => Promise<boolean>
+): Promise<PaymentBatchResult> => {
+  const result: PaymentBatchResult = {
+    success: false,
+    processedCount: 0,
+    failedCount: 0,
+    errors: [],
+    payments: []
+  };
+  
+  const validEntries = entries.filter(entry => entry.isValid);
+  const invalidEntries = entries.filter(entry => !entry.isValid);
+  
+  // Add errors for invalid entries
+  result.errors = invalidEntries.map(entry => `${entry.serialNumber}: ${entry.error}`);
+  result.failedCount = invalidEntries.length;
+  
+  // Process valid entries
+  for (const entry of validEntries) {
+    try {
+      const payment: Omit<Payment, 'id' | 'userId' | 'createdAt'> = {
+        customerId: entry.customer!.id,
+        customerName: entry.customerName,
+        serialNumber: entry.serialNumber,
+        amount: entry.amount,
+        date: date,
+        collectionType: collectionType,
+        agentName: entry.agentName,
+        area: entry.customer!.area || '',
+        paymentMethod: 'cash',
+        notes: `Batch payment processed by ${entry.agentName}`,
+        receiptNumber: `BATCH-${Date.now()}-${entry.serialNumber}`
+      };
       
-      try {
-        const customer = this.getCustomerBySerialNumber(entry.serialNumber);
-        if (!customer) {
-          throw new Error(`Customer not found with serial number: ${entry.serialNumber}`);
-        }
-
-        const payment: Payment = {
-          id: paymentId,
-          customerId: customer.id,
-          customerName: customer.name,
-          serialNumber: entry.serialNumber,
-          amount: entry.amount,
-          date: batchData.date,
-          collectionType: batchData.collectionType,
-          agentName: entry.agentName || 'Not specified',
-          areaId: batchData.areaId || this.currentAreaId || undefined
-        };
-
-        result.successfulPayments.push(payment);
-        console.log(`Successfully processed payment for ${customer.name}:`, payment);
-        
-      } catch (error) {
-        console.error(`Failed to process entry for serial ${entry.serialNumber}:`, error);
-        result.failedPayments.push({
-          entry,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
+      const success = await addPayment(payment);
       
-      result.totalProcessed++;
+      if (success) {
+        result.processedCount++;
+        result.payments.push(payment as Payment);
+      } else {
+        result.failedCount++;
+        result.errors.push(`Failed to save payment for ${entry.serialNumber}`);
+      }
+    } catch (error) {
+      result.failedCount++;
+      result.errors.push(`Error processing payment for ${entry.serialNumber}: ${error}`);
     }
-
-    result.success = result.failedPayments.length === 0;
-    console.log('Batch processing completed:', result);
-    
-    return result;
   }
-
-  private validateEntries(entries: PaymentEntry[]): { entry: PaymentEntry; error: string }[] {
-    const errors: { entry: PaymentEntry; error: string }[] = [];
-    const serialNumbers = new Set<string>();
-
-    for (const entry of entries) {
-      // Check for required fields
-      if (!entry.serialNumber) {
-        errors.push({ entry, error: 'Serial number is required' });
-        continue;
-      }
-
-      if (!entry.amount || entry.amount <= 0) {
-        errors.push({ entry, error: 'Amount must be greater than 0' });
-        continue;
-      }
-
-      // Check for duplicates within the batch
-      if (serialNumbers.has(entry.serialNumber)) {
-        errors.push({ entry, error: 'Duplicate serial number in batch' });
-        continue;
-      }
-      serialNumbers.add(entry.serialNumber);
-
-      // Validate customer exists
-      const customer = this.getCustomerBySerialNumber(entry.serialNumber);
-      if (!customer) {
-        errors.push({ entry, error: 'Customer not found' });
-        continue;
-      }
-    }
-
-    return errors;
+  
+  result.success = result.processedCount > 0;
+  
+  // Show summary toast
+  if (result.success) {
+    toast.success(`Batch payment processed: ${result.processedCount} successful, ${result.failedCount} failed`);
+  } else {
+    toast.error(`Batch payment failed: ${result.errors.length} errors`);
   }
-}
+  
+  return result;
+};
+
+export const exportBatchTemplate = () => {
+  const template = [
+    ['Serial Number', 'Customer Name', 'Amount', 'Agent Name'],
+    ['SN001', 'John Doe', '1000', 'Agent Smith'],
+    ['SN002', 'Jane Smith', '1500', 'Agent Jones'],
+  ];
+  
+  const csvContent = template.map(row => row.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'payment_batch_template.csv';
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
