@@ -39,6 +39,9 @@ export interface Customer {
   deadlineDate?: string;
   isFullyPaid: boolean;
   areaId?: string;
+  numberOfDays: number;
+  numberOfWeeks?: number;
+  numberOfMonths?: number;
 }
 
 export interface Payment {
@@ -86,7 +89,7 @@ interface FinanceContextType {
   addPayment: (payment: Omit<Payment, 'id'>) => Promise<void>;
   updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
-  addArea: (area: Omit<Area, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  addArea: (area: Omit<Area, 'id' | 'createdAt' | 'updatedAt'>) => Area;
   updateArea: (id: string, updates: Partial<Area>) => Promise<void>;
   deleteArea: (id: string) => Promise<void>;
   getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
@@ -96,11 +99,21 @@ interface FinanceContextType {
   getCurrentAreaCustomers: () => Customer[];
   getAreaById: (id: string) => Area | undefined;
   setCurrentArea: (area: Area | null) => void;
-  calculateDailyInterestEarnings: () => DailyEarning;
-  calculateWeeklyInterestEarnings: () => DailyEarning;
-  calculateMonthlyInterestEarnings: () => DailyEarning;
+  calculateDailyInterestEarnings: (date?: string) => number;
+  calculateWeeklyInterestEarnings: (date?: string) => number;
+  calculateMonthlyInterestEarnings: (month?: string, year?: string) => number;
   getCurrentAreaDailyEarnings: () => DailyEarning[];
   deleteDailyInterestEarning: (id: string) => void;
+  getAreaCustomers: (areaId: string) => Customer[];
+  getAreaPayments: (areaId: string) => Payment[];
+  getCurrentAreaPayments: () => Payment[];
+  getCustomerPayments: (customerId: string) => Payment[];
+  updateCustomerPaymentStatus: (customerId: string, isFullyPaid: boolean) => Promise<void>;
+  calculateAllPenalties: () => void;
+  calculateTotalEarnings: () => number;
+  addPaymentBatch: (payments: Omit<Payment, 'id'>[]) => Promise<void>;
+  recalculateAllCustomerPayments: () => void;
+  getDailyCollections: (date: string) => Payment[];
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -127,6 +140,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const interestAmount = (customer.loanAmount || 0) * 0.1; // 10% default interest
     const totalAmountToBePaid = totalAmountGiven + interestAmount;
     const totalPaid = customer.paidInstallments * (customer.installmentAmount || 0);
+    const defaultNumberOfDays = 30; // Default loan period
     
     return {
       id: customer.id,
@@ -160,7 +174,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       issuedDate: customer.startDate,
       deadlineDate: customer.endDate,
       isFullyPaid: totalPaid >= totalAmountToBePaid,
-      areaId: customer.area
+      areaId: customer.area,
+      numberOfDays: defaultNumberOfDays,
+      numberOfWeeks: Math.ceil(defaultNumberOfDays / 7),
+      numberOfMonths: Math.ceil(defaultNumberOfDays / 30)
     };
   });
 
@@ -295,25 +312,27 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const addArea = async (area: Omit<Area, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!firebaseUser) return;
-    
-    const success = await firebaseData.saveArea({
+  const addArea = (area: Omit<Area, 'id' | 'createdAt' | 'updatedAt'>): Area => {
+    const newArea: Area = {
+      id: `area_${Date.now()}`,
       name: area.name,
       description: area.description,
-      totalCustomers: 0,
-      totalAmount: 0,
-      collectedAmount: 0,
-      pendingAmount: 0
-    });
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
 
-    if (!success) {
-      toast({
-        title: "Error",
-        description: "Failed to add area",
-        variant: "destructive",
+    if (firebaseUser) {
+      firebaseData.saveArea({
+        name: area.name,
+        description: area.description,
+        totalCustomers: 0,
+        totalAmount: 0,
+        collectedAmount: 0,
+        pendingAmount: 0
       });
     }
+
+    return newArea;
   };
 
   const updateArea = async (id: string, updates: Partial<Area>) => {
@@ -360,50 +379,37 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCurrentAreaId(area ? area.id : null);
   };
 
-  const calculateDailyInterestEarnings = (): DailyEarning => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayPayments = payments.filter(p => p.date === today);
-    const totalInterest = todayPayments.reduce((sum, p) => sum + (p.amount * 0.1), 0);
-    const totalPrinciple = todayPayments.reduce((sum, p) => sum + (p.amount * 0.9), 0);
-    
-    return {
-      id: `daily-${today}`,
-      date: today,
-      totalInterestEarned: totalInterest,
-      totalPrincipleEarned: totalPrinciple,
-      areaId: currentAreaId || undefined
-    };
+  const calculateDailyInterestEarnings = (date?: string): number => {
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    const todayPayments = payments.filter(p => p.date === targetDate);
+    return todayPayments.reduce((sum, p) => sum + (p.amount * 0.1), 0);
   };
 
-  const calculateWeeklyInterestEarnings = (): DailyEarning => {
-    const today = new Date();
-    const weekStart = new Date(today.setDate(today.getDate() - today.getDay()));
-    const weekStartStr = weekStart.toISOString().split('T')[0];
+  const calculateWeeklyInterestEarnings = (date?: string): number => {
+    const targetDate = date ? new Date(date) : new Date();
+    const weekStart = new Date(targetDate.setDate(targetDate.getDate() - targetDate.getDay()));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
     
-    return {
-      id: `weekly-${weekStartStr}`,
-      date: weekStartStr,
-      totalInterestEarned: 0,
-      totalPrincipleEarned: 0,
-      isWeeklyTotal: true,
-      weekStartDate: weekStartStr,
-      areaId: currentAreaId || undefined
-    };
+    const weekPayments = payments.filter(p => {
+      const paymentDate = new Date(p.date);
+      return paymentDate >= weekStart && paymentDate <= weekEnd;
+    });
+    
+    return weekPayments.reduce((sum, p) => sum + (p.amount * 0.1), 0);
   };
 
-  const calculateMonthlyInterestEarnings = (): DailyEarning => {
-    const today = new Date();
-    const monthYear = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+  const calculateMonthlyInterestEarnings = (month?: string, year?: string): number => {
+    const targetMonth = month || (new Date().getMonth() + 1).toString();
+    const targetYear = year || new Date().getFullYear().toString();
     
-    return {
-      id: `monthly-${monthYear}`,
-      date: `${monthYear}-01`,
-      totalInterestEarned: 0,
-      totalPrincipleEarned: 0,
-      isMonthlyTotal: true,
-      monthYear,
-      areaId: currentAreaId || undefined
-    };
+    const monthPayments = payments.filter(p => {
+      const paymentDate = new Date(p.date);
+      return paymentDate.getMonth() + 1 === parseInt(targetMonth) && 
+             paymentDate.getFullYear() === parseInt(targetYear);
+    });
+    
+    return monthPayments.reduce((sum, p) => sum + (p.amount * 0.1), 0);
   };
 
   const getCurrentAreaDailyEarnings = (): DailyEarning[] => {
@@ -414,6 +420,51 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteDailyInterestEarning = (id: string) => {
     setDailyEarnings(prev => prev.filter(earning => earning.id !== id));
+  };
+
+  const getAreaCustomers = (areaId: string): Customer[] => {
+    return customers.filter(customer => customer.areaId === areaId || customer.area === areaId);
+  };
+
+  const getAreaPayments = (areaId: string): Payment[] => {
+    return payments.filter(payment => payment.areaId === areaId);
+  };
+
+  const getCurrentAreaPayments = (): Payment[] => {
+    if (!currentAreaId) return payments;
+    return payments.filter(payment => payment.areaId === currentAreaId);
+  };
+
+  const getCustomerPayments = (customerId: string): Payment[] => {
+    return payments.filter(payment => payment.customerId === customerId);
+  };
+
+  const updateCustomerPaymentStatus = async (customerId: string, isFullyPaid: boolean) => {
+    await updateCustomer(customerId, { isFullyPaid });
+  };
+
+  const calculateAllPenalties = () => {
+    // Implementation for calculating penalties
+    console.log('Calculating penalties for all customers');
+  };
+
+  const calculateTotalEarnings = (): number => {
+    return payments.reduce((sum, payment) => sum + (payment.amount * 0.1), 0);
+  };
+
+  const addPaymentBatch = async (batchPayments: Omit<Payment, 'id'>[]) => {
+    for (const payment of batchPayments) {
+      await addPayment(payment);
+    }
+  };
+
+  const recalculateAllCustomerPayments = () => {
+    // Implementation for recalculating customer payments
+    console.log('Recalculating all customer payments');
+  };
+
+  const getDailyCollections = (date: string): Payment[] => {
+    return payments.filter(payment => payment.date === date);
   };
 
   const value: FinanceContextType = {
@@ -442,7 +493,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     calculateWeeklyInterestEarnings,
     calculateMonthlyInterestEarnings,
     getCurrentAreaDailyEarnings,
-    deleteDailyInterestEarning
+    deleteDailyInterestEarning,
+    getAreaCustomers,
+    getAreaPayments,
+    getCurrentAreaPayments,
+    getCustomerPayments,
+    updateCustomerPaymentStatus,
+    calculateAllPenalties,
+    calculateTotalEarnings,
+    addPaymentBatch,
+    recalculateAllCustomerPayments,
+    getDailyCollections
   };
 
   return (

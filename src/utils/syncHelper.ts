@@ -154,7 +154,7 @@ export const syncDataFromSupabase = async (userId: string): Promise<{
       const issuedDate = new Date(c.createdat).toISOString().split('T')[0];
       const totalAmountGiven = Number(c.totalamountgiven);
       const interestAmount = Number(c.rateofinterest); // Using the old field to store interest amount
-      const numberOfDays = c.numberofdays;
+      const numberOfDays = c.numberofdays || 30; // Default to 30 days if not set
       const totalAmountToBePaid = Number(c.totalamounttobepaid);
       
       // Calculate derived fields
@@ -166,24 +166,37 @@ export const syncDataFromSupabase = async (userId: string): Promise<{
         id: c.id,
         name: c.name,
         serialNumber: c.id.substring(0, 8),  // Generate a serial number from ID
+        area: c.areaid || 'default',
+        mobile: '', // Default empty mobile
+        loanAmount: totalAmountGiven,
+        installmentAmount: c.installmentamount ? Number(c.installmentamount) : dailyAmount,
+        collectionType: 'daily' as 'daily' | 'weekly' | 'monthly',
+        startDate: issuedDate,
+        endDate: deadlineDate,
         address: c.address || '',
-        issuedDate,
+        guarantor: '', // Default empty guarantor
+        guarantorMobile: '', // Default empty guarantor mobile
+        totalInstallments: numberOfDays,
+        paidInstallments: 0, // Default to 0
+        balanceAmount: totalAmountToBePaid,
+        status: c.isfullypaid ? 'completed' as const : 'active' as const,
+        createdAt: c.createdat || new Date().toISOString(),
+        updatedAt: c.createdat || new Date().toISOString(),
         totalAmountGiven,
-        interestAmount,
-        numberOfDays,
         totalAmountToBePaid,
         totalPaid: 0, // This would need to be calculated from payments
+        interestAmount,
+        interestPercentage,
+        penaltyAmount: 0, // Initialize penalty amount
+        dailyAmount,
+        paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly',
+        issuedDate,
+        deadlineDate,
         isFullyPaid: c.isfullypaid || false,
         areaId: c.areaid,
-        createdAt: c.createdat || new Date().toISOString(),
-        installmentAmount: c.installmentamount ? Number(c.installmentamount) : undefined,
-        dailyAmount,
-        interestPercentage,
-        deadlineDate,
-        paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly', // Add default payment category
-        penaltyAmount: 0, // Initialize penalty amount
-        numberOfWeeks: undefined, // Initialize as undefined
-        numberOfMonths: undefined, // Initialize as undefined
+        numberOfDays,
+        numberOfWeeks: Math.ceil(numberOfDays / 7),
+        numberOfMonths: Math.ceil(numberOfDays / 30)
       };
     });
     
