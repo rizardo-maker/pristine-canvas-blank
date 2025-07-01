@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState } from 'react';
 import { useFirebaseData } from './FirebaseDataContext';
 
@@ -118,7 +117,7 @@ interface FinanceContextType {
   calculateMonthlyInterestEarnings: (month: string, year: string) => number;
   
   // Missing methods from Posting page
-  addPaymentBatch: (payments: Payment[]) => Promise<boolean>;
+  addPaymentBatch: (payments: Payment[]) => Promise<{ success: boolean; errors: string[] }>;
   getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
   recalculateAllCustomerPayments: () => void;
   
@@ -348,15 +347,30 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Missing methods from Posting page
-  const addPaymentBatch = async (payments: Payment[]): Promise<boolean> => {
+  const addPaymentBatch = async (payments: Payment[]): Promise<{ success: boolean; errors: string[] }> => {
+    const errors: string[] = [];
+    let successCount = 0;
+    
     try {
       for (const payment of payments) {
-        await addPayment(payment);
+        const success = await addPayment(payment);
+        if (success) {
+          successCount++;
+        } else {
+          errors.push(`Failed to add payment for ${payment.customerName}`);
+        }
       }
-      return true;
+      
+      return {
+        success: successCount > 0,
+        errors
+      };
     } catch (error) {
       console.error('Error adding payment batch:', error);
-      return false;
+      return {
+        success: false,
+        errors: ['Unexpected error occurred while adding payments']
+      };
     }
   };
 

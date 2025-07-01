@@ -174,7 +174,7 @@ export const syncDataFromSupabase = async (userId: string): Promise<{
         totalAmountToBePaid,
         totalPaid: 0, // This would need to be calculated from payments
         isFullyPaid: c.isfullypaid || false,
-        area: c.area || '',
+        area: c.areaid || c.area || '', // Use areaid if available, fallback to area
         createdAt: c.createdat || new Date().toISOString(),
         installmentAmount: c.installmentamount ? Number(c.installmentamount) : 0,
         dailyAmount,
@@ -185,7 +185,7 @@ export const syncDataFromSupabase = async (userId: string): Promise<{
         numberOfWeeks: undefined,
         numberOfMonths: undefined,
         // Required Customer properties
-        mobile: '',
+        mobile: c.mobile || '',
         loanAmount: totalAmountGiven,
         collectionType: 'daily' as 'daily' | 'weekly' | 'monthly',
         startDate: issuedDate,

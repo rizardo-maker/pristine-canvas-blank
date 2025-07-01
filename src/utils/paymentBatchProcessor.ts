@@ -12,12 +12,96 @@ export interface PaymentBatchEntry {
   customer?: Customer;
 }
 
+export interface PaymentEntry {
+  id: string;
+  serialNumber: string;
+  customerName: string;
+  customerId: string;
+  amount: number;
+  agentName: string;
+}
+
 export interface PaymentBatchResult {
   success: boolean;
   processedCount: number;
   failedCount: number;
   errors: string[];
   payments: Payment[];
+  successfulPayments: Payment[];
+  failedPayments: PaymentEntry[];
+}
+
+export class PaymentBatchProcessor {
+  private getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
+  private currentAreaId: string | null;
+
+  constructor(
+    getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined,
+    currentAreaId?: string | null
+  ) {
+    this.getCustomerBySerialNumber = getCustomerBySerialNumber;
+    this.currentAreaId = currentAreaId || null;
+  }
+
+  async processBatch(
+    entries: PaymentEntry[],
+    options: {
+      date: string;
+      collectionType: 'daily' | 'weekly' | 'monthly';
+      areaId?: string;
+    }
+  ): Promise<PaymentBatchResult> {
+    const result: PaymentBatchResult = {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      errors: [],
+      payments: [],
+      successfulPayments: [],
+      failedPayments: []
+    };
+
+    for (const entry of entries) {
+      try {
+        const customer = this.getCustomerBySerialNumber(entry.serialNumber);
+        
+        if (!customer) {
+          result.failedPayments.push(entry);
+          result.errors.push(`Customer with serial number ${entry.serialNumber} not found`);
+          result.failedCount++;
+          continue;
+        }
+
+        const payment: Payment = {
+          id: `payment-${Date.now()}-${entry.serialNumber}`,
+          customerId: customer.id,
+          customerName: entry.customerName,
+          serialNumber: entry.serialNumber,
+          amount: entry.amount,
+          date: options.date,
+          collectionType: options.collectionType,
+          createdAt: new Date().toISOString(),
+          userId: customer.userId,
+          agentName: entry.agentName,
+          area: customer.area,
+          paymentMethod: 'cash',
+          notes: `Batch payment processed by ${entry.agentName}`,
+          receiptNumber: `BATCH-${Date.now()}-${entry.serialNumber}`
+        };
+
+        result.successfulPayments.push(payment);
+        result.payments.push(payment);
+        result.processedCount++;
+      } catch (error) {
+        result.failedPayments.push(entry);
+        result.errors.push(`Error processing payment for ${entry.serialNumber}: ${error}`);
+        result.failedCount++;
+      }
+    }
+
+    result.success = result.processedCount > 0;
+    return result;
+  }
 }
 
 export const validatePaymentEntry = (
@@ -69,7 +153,9 @@ export const processBatchPayments = async (
     processedCount: 0,
     failedCount: 0,
     errors: [],
-    payments: []
+    payments: [],
+    successfulPayments: [],
+    failedPayments: []
   };
   
   const validEntries = entries.filter(entry => entry.isValid);
@@ -100,6 +186,7 @@ export const processBatchPayments = async (
       
       if (success) {
         result.processedCount++;
+        result.successfulPayments.push(payment as Payment);
         result.payments.push(payment as Payment);
       } else {
         result.failedCount++;
