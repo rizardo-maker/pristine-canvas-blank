@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useFirebaseAuth } from './FirebaseAuthContext';
 import { useFirebaseRealtime } from '@/hooks/useFirebaseRealtime';
@@ -38,10 +39,16 @@ export const useFirebaseData = () => {
 };
 
 export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, firebaseUser } = useFirebaseAuth();
+  const { firebaseUser } = useFirebaseAuth();
   const { toast } = useToast();
 
-  // Use the new hook for each data type
+  // Enable real-time listeners as soon as Firebase user is authenticated
+  const isFirebaseEnabled = !!firebaseUser;
+
+  console.log('FirebaseDataProvider - Firebase user:', firebaseUser?.uid);
+  console.log('FirebaseDataProvider - Real-time enabled:', isFirebaseEnabled);
+
+  // Use the Firebase Realtime Database hooks
   const {
     data: customersData,
     loading: customersLoading,
@@ -51,7 +58,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     deleteData: deleteCustomerData
   } = useFirebaseRealtime<Record<string, RealtimeCustomer>>({
     path: 'customers',
-    enabled: !!user && !!firebaseUser
+    enabled: isFirebaseEnabled
   });
 
   const {
@@ -63,7 +70,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     deleteData: deletePaymentData
   } = useFirebaseRealtime<Record<string, RealtimePayment>>({
     path: 'payments',
-    enabled: !!user && !!firebaseUser
+    enabled: isFirebaseEnabled
   });
 
   const {
@@ -75,7 +82,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     deleteData: deleteAreaData
   } = useFirebaseRealtime<Record<string, RealtimeArea>>({
     path: 'areas',
-    enabled: !!user && !!firebaseUser
+    enabled: isFirebaseEnabled
   });
 
   // Convert Firebase objects to arrays
@@ -89,12 +96,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
         id: key,
         ...customersData[key]
       }));
-      console.log('Customers data updated:', customersList.length);
+      console.log('Firebase customers data updated:', customersList.length);
       setCustomers(customersList);
-    } else {
+    } else if (isFirebaseEnabled) {
+      console.log('No customers data, setting empty array');
       setCustomers([]);
     }
-  }, [customersData]);
+  }, [customersData, isFirebaseEnabled]);
 
   useEffect(() => {
     if (paymentsData) {
@@ -102,12 +110,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
         id: key,
         ...paymentsData[key]
       }));
-      console.log('Payments data updated:', paymentsList.length);
+      console.log('Firebase payments data updated:', paymentsList.length);
       setPayments(paymentsList);
-    } else {
+    } else if (isFirebaseEnabled) {
+      console.log('No payments data, setting empty array');
       setPayments([]);
     }
-  }, [paymentsData]);
+  }, [paymentsData, isFirebaseEnabled]);
 
   useEffect(() => {
     if (areasData) {
@@ -115,23 +124,28 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
         id: key,
         ...areasData[key]
       }));
-      console.log('Areas data updated:', areasList.length);
+      console.log('Firebase areas data updated:', areasList.length);
       setAreas(areasList);
-    } else {
+    } else if (isFirebaseEnabled) {
+      console.log('No areas data, setting empty array');
       setAreas([]);
     }
-  }, [areasData]);
+  }, [areasData, isFirebaseEnabled]);
 
   const isLoading = customersLoading || paymentsLoading || areasLoading;
   const isConnected = customersConnected && paymentsConnected && areasConnected;
-  const isDataSynced = !isLoading && !!user && !!firebaseUser;
+  const isDataSynced = !isLoading && isFirebaseEnabled;
 
   // Customer operations
   const saveCustomer = async (customer: Omit<RealtimeCustomer, 'userId' | 'createdAt' | 'updatedAt' | 'id'>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) {
+      console.error('No Firebase user for saving customer');
+      return false;
+    }
     
     try {
-      const customerWithUserId = { ...customer, userId: user.id };
+      const customerWithUserId = { ...customer, userId: firebaseUser.uid };
+      console.log('Saving customer to Firebase:', customerWithUserId.name);
       await pushCustomer(customerWithUserId);
       
       toast({
@@ -140,14 +154,16 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error saving customer:', error);
       return false;
     }
   };
 
   const updateCustomer = async (customerId: string, updates: Partial<RealtimeCustomer>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
+      console.log('Updating customer in Firebase:', customerId);
       await updateCustomerData(updates, customerId);
       
       toast({
@@ -156,14 +172,16 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error updating customer:', error);
       return false;
     }
   };
 
   const deleteCustomer = async (customerId: string): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
+      console.log('Deleting customer from Firebase:', customerId);
       await deleteCustomerData(customerId);
       
       toast({
@@ -172,15 +190,18 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error deleting customer:', error);
       return false;
     }
   };
 
+  // Payment operations
   const savePayment = async (payment: Omit<RealtimePayment, 'userId' | 'createdAt' | 'id'>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
-      const paymentWithUserId = { ...payment, userId: user.id };
+      const paymentWithUserId = { ...payment, userId: firebaseUser.uid };
+      console.log('Saving payment to Firebase:', paymentWithUserId.amount);
       await pushPayment(paymentWithUserId);
       
       toast({
@@ -189,12 +210,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error saving payment:', error);
       return false;
     }
   };
 
   const updatePayment = async (paymentId: string, updates: Partial<RealtimePayment>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
       await updatePaymentData(updates, paymentId);
@@ -205,12 +227,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error updating payment:', error);
       return false;
     }
   };
 
   const deletePayment = async (paymentId: string): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
       await deletePaymentData(paymentId);
@@ -221,15 +244,18 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error deleting payment:', error);
       return false;
     }
   };
 
+  // Area operations
   const saveArea = async (area: Omit<RealtimeArea, 'userId' | 'createdAt' | 'updatedAt' | 'id'>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
-      const areaWithUserId = { ...area, userId: user.id };
+      const areaWithUserId = { ...area, userId: firebaseUser.uid };
+      console.log('Saving area to Firebase:', areaWithUserId.name);
       await pushArea(areaWithUserId);
       
       toast({
@@ -238,12 +264,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error saving area:', error);
       return false;
     }
   };
 
   const updateArea = async (areaId: string, updates: Partial<RealtimeArea>): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
       await updateAreaData(updates, areaId);
@@ -254,12 +281,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error updating area:', error);
       return false;
     }
   };
 
   const deleteArea = async (areaId: string): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
       await deleteAreaData(areaId);
@@ -270,12 +298,13 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       return true;
     } catch (error) {
+      console.error('Error deleting area:', error);
       return false;
     }
   };
 
   const migrateLocalData = async (localData: any): Promise<boolean> => {
-    if (!user) return false;
+    if (!firebaseUser) return false;
     
     try {
       console.log('Starting data migration to Firebase Realtime Database...');
@@ -283,7 +312,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Migrate customers
       if (localData.customers && localData.customers.length > 0) {
         for (const customer of localData.customers) {
-          await pushCustomer({ ...customer, userId: user.id });
+          await pushCustomer({ ...customer, userId: firebaseUser.uid });
         }
         console.log(`Migrated ${localData.customers.length} customers`);
       }
@@ -291,7 +320,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Migrate payments
       if (localData.payments && localData.payments.length > 0) {
         for (const payment of localData.payments) {
-          await pushPayment({ ...payment, userId: user.id });
+          await pushPayment({ ...payment, userId: firebaseUser.uid });
         }
         console.log(`Migrated ${localData.payments.length} payments`);
       }
@@ -299,7 +328,7 @@ export const FirebaseDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Migrate areas
       if (localData.areas && localData.areas.length > 0) {
         for (const area of localData.areas) {
-          await pushArea({ ...area, userId: user.id });
+          await pushArea({ ...area, userId: firebaseUser.uid });
         }
         console.log(`Migrated ${localData.areas.length} areas`);
       }
