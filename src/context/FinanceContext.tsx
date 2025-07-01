@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { useFirebaseData } from './FirebaseDataContext';
 
 // Types for the finance data
@@ -23,6 +23,18 @@ export interface Customer {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  
+  // Additional properties expected by components
+  serialNumber: string;
+  deadlineDate?: string;
+  issuedDate: string;
+  isFullyPaid: boolean;
+  totalAmountToBePaid: number;
+  penaltyAmount?: number;
+  totalPaid: number;
+  totalAmountGiven: number;
+  dailyAmount?: number;
+  interestAmount?: number;
 }
 
 export interface Payment {
@@ -35,6 +47,7 @@ export interface Payment {
   collectionType: 'daily' | 'weekly' | 'monthly';
   createdAt: string;
   userId: string;
+  agentName?: string;
 }
 
 export interface Area {
@@ -51,6 +64,7 @@ interface FinanceContextType {
   areas: Area[];
   isLoading: boolean;
   isConnected: boolean;
+  currentAreaId: string | null;
   addCustomer: (customer: Omit<Customer, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   updateCustomer: (customerId: string, updates: Partial<Customer>) => Promise<boolean>;
   deleteCustomer: (customerId: string) => Promise<boolean>;
@@ -60,6 +74,16 @@ interface FinanceContextType {
   addArea: (area: Omit<Area, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   updateArea: (areaId: string, updates: Partial<Area>) => Promise<boolean>;
   deleteArea: (areaId: string) => Promise<boolean>;
+  
+  // Area management methods
+  getCurrentAreaCustomers: () => Customer[];
+  getAreaById: (areaId: string) => Area | undefined;
+  setCurrentAreaId: (areaId: string | null) => void;
+  
+  // Interest calculation methods
+  calculateDailyInterestEarnings: (date: string) => number;
+  calculateWeeklyInterestEarnings: (weekStartDate: string) => number;
+  calculateMonthlyInterestEarnings: (month: string, year: string) => number;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -90,6 +114,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     deleteArea
   } = useFirebaseData();
 
+  const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
+
   const addCustomer = async (customer: Omit<Customer, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
     return await saveCustomer(customer);
   };
@@ -102,6 +128,61 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return await saveArea(area);
   };
 
+  // Area management methods
+  const getCurrentAreaCustomers = (): Customer[] => {
+    if (!currentAreaId) return customers;
+    return customers.filter(customer => customer.area === currentAreaId);
+  };
+
+  const getAreaById = (areaId: string): Area | undefined => {
+    return areas.find(area => area.id === areaId);
+  };
+
+  // Interest calculation methods
+  const calculateDailyInterestEarnings = (date: string): number => {
+    const dayPayments = payments.filter(payment => payment.date === date);
+    if (currentAreaId) {
+      const areaCustomers = getCurrentAreaCustomers();
+      const areaCustomerIds = areaCustomers.map(c => c.id);
+      return dayPayments
+        .filter(payment => areaCustomerIds.includes(payment.customerId))
+        .reduce((sum, payment) => {
+          const customer = areaCustomers.find(c => c.id === payment.customerId);
+          return sum + ((customer?.interestAmount || 0) / (customer?.totalInstallments || 1));
+        }, 0);
+    }
+    return dayPayments.reduce((sum, payment) => {
+      const customer = customers.find(c => c.id === payment.customerId);
+      return sum + ((customer?.interestAmount || 0) / (customer?.totalInstallments || 1));
+    }, 0);
+  };
+
+  const calculateWeeklyInterestEarnings = (weekStartDate: string): number => {
+    const startDate = new Date(weekStartDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    
+    let totalInterest = 0;
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      totalInterest += calculateDailyInterestEarnings(dateStr);
+    }
+    return totalInterest;
+  };
+
+  const calculateMonthlyInterestEarnings = (month: string, year: string): number => {
+    const monthNum = parseInt(month);
+    const yearNum = parseInt(year);
+    const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
+    
+    let totalInterest = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${month.padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      totalInterest += calculateDailyInterestEarnings(dateStr);
+    }
+    return totalInterest;
+  };
+
   return (
     <FinanceContext.Provider value={{
       customers,
@@ -109,6 +190,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       areas,
       isLoading,
       isConnected,
+      currentAreaId,
       addCustomer,
       updateCustomer,
       deleteCustomer,
@@ -117,7 +199,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deletePayment,
       addArea,
       updateArea,
-      deleteArea
+      deleteArea,
+      getCurrentAreaCustomers,
+      getAreaById,
+      setCurrentAreaId,
+      calculateDailyInterestEarnings,
+      calculateWeeklyInterestEarnings,
+      calculateMonthlyInterestEarnings
     }}>
       {children}
     </FinanceContext.Provider>
