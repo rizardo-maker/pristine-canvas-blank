@@ -16,7 +16,9 @@ const DailyEarningsTable = () => {
     getAreaById 
   } = useFinance();
 
-  const dailyEarnings = getCurrentAreaDailyEarnings();
+  const dailyEarnings = getCurrentAreaDailyEarnings().sort((a, b) => 
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   const currentArea = currentAreaId ? getAreaById(currentAreaId) : null;
 
@@ -71,22 +73,22 @@ const DailyEarningsTable = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {dailyEarnings.map((entry, index) => (
+                {dailyEarnings.map((entry) => (
                   <TableRow 
-                    key={entry.id || index} 
+                    key={entry.id} 
                     className={getRowStyle(entry.isWeeklyTotal, entry.isMonthlyTotal)}
                   >
                     <TableCell className="font-medium">
                       {getEntryLabel(entry)}
                     </TableCell>
                     <TableCell className="text-right">
-                      ₹{(entry.totalInterestEarned || 0).toLocaleString()}
+                      ₹{entry.totalInterestEarned.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right">
-                      ₹{(entry.totalPrincipleEarned || 0).toLocaleString()}
+                      ₹{entry.totalPrincipleEarned.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
-                      ₹{((entry.totalInterestEarned || 0) + (entry.totalPrincipleEarned || 0)).toLocaleString()}
+                      ₹{(entry.totalInterestEarned + entry.totalPrincipleEarned).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center">
                       {entry.isMonthlyTotal ? (
@@ -109,7 +111,7 @@ const DailyEarningsTable = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => handleDelete(
-                          entry.id || index.toString(), 
+                          entry.id, 
                           getEntryLabel(entry), 
                           entry.isWeeklyTotal, 
                           entry.isMonthlyTotal

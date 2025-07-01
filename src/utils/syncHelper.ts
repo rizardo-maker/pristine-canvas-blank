@@ -88,7 +88,7 @@ export const syncDataToSupabase = async (
         numberofdays: customer.numberOfDays,
         totalamounttobepaid: customer.totalAmountToBePaid,
         isfullypaid: customer.isFullyPaid,
-        area: customer.area,
+        areaid: customer.areaId,
         installmentamount: customer.installmentAmount
       };
       
@@ -174,30 +174,16 @@ export const syncDataFromSupabase = async (userId: string): Promise<{
         totalAmountToBePaid,
         totalPaid: 0, // This would need to be calculated from payments
         isFullyPaid: c.isfullypaid || false,
-        area: c.areaid || c.area || '', // Use areaid if available, fallback to area
+        areaId: c.areaid,
         createdAt: c.createdat || new Date().toISOString(),
-        installmentAmount: c.installmentamount ? Number(c.installmentamount) : 0,
+        installmentAmount: c.installmentamount ? Number(c.installmentamount) : undefined,
         dailyAmount,
         interestPercentage,
         deadlineDate,
-        paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly',
-        penaltyAmount: 0,
-        numberOfWeeks: undefined,
-        numberOfMonths: undefined,
-        // Required Customer properties
-        mobile: c.mobile || '',
-        loanAmount: totalAmountGiven,
-        collectionType: 'daily' as 'daily' | 'weekly' | 'monthly',
-        startDate: issuedDate,
-        endDate: deadlineDate,
-        guarantor: '',
-        guarantorMobile: '',
-        totalInstallments: numberOfDays,
-        paidInstallments: 0,
-        balanceAmount: totalAmountToBePaid,
-        status: 'active' as 'active' | 'completed' | 'defaulted',
-        updatedAt: new Date().toISOString(),
-        userId: userId
+        paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly', // Add default payment category
+        penaltyAmount: 0, // Initialize penalty amount
+        numberOfWeeks: undefined, // Initialize as undefined
+        numberOfMonths: undefined, // Initialize as undefined
       };
     });
     

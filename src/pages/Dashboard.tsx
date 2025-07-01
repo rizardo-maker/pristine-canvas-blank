@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFinance } from '@/context/FinanceContext';
@@ -35,14 +36,14 @@ const Dashboard = () => {
   
   useEffect(() => {
     // Filter by current area if selected
-    const areaFilter = (item: { area?: string }) => 
-      currentAreaId ? item.area === currentAreaId : true;
+    const areaFilter = (item: { areaId?: string }) => 
+      currentAreaId ? item.areaId === currentAreaId : true;
     
     const filteredPayments = payments.filter(areaFilter);
     const filteredCustomers = customers.filter(areaFilter);
     
-    // Calculate total earnings using the new method
-    const earnings = calculateTotalEarnings();
+    // Calculate total earnings using the new method that includes overpayments
+    const earnings = calculateTotalEarnings(filteredCustomers, filteredPayments);
     setTotalEarnings(earnings);
     
     // Calculate today's collections
@@ -87,7 +88,7 @@ const Dashboard = () => {
   
   // Calculate total outstanding amount (only for customers who haven't fully paid)
   const totalOutstanding = customers
-    .filter(customer => currentAreaId ? customer.area === currentAreaId : true)
+    .filter(customer => currentAreaId ? customer.areaId === currentAreaId : true)
     .reduce((sum, customer) => {
       if (customer.isFullyPaid) return sum;
       return sum + (customer.totalAmountToBePaid - customer.totalPaid);
@@ -95,13 +96,13 @@ const Dashboard = () => {
   
   // Get recent payments
   const recentPayments = [...payments]
-    .filter(payment => currentAreaId ? payment.area === currentAreaId : true)
+    .filter(payment => currentAreaId ? payment.areaId === currentAreaId : true)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
   
   // Get customers with pending payments
   const pendingCustomers = customers
-    .filter(customer => !customer.isFullyPaid && (currentAreaId ? customer.area === currentAreaId : true))
+    .filter(customer => !customer.isFullyPaid && (currentAreaId ? customer.areaId === currentAreaId : true))
     .slice(0, 5);
   
   return (
@@ -198,8 +199,8 @@ const Dashboard = () => {
           <CardContent>
             <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
               {areas.slice(0, 3).map(area => {
-                const areaCustomers = customers.filter(c => c.area === area.id);
-                const areaPayments = payments.filter(p => p.area === area.id);
+                const areaCustomers = customers.filter(c => c.areaId === area.id);
+                const areaPayments = payments.filter(p => p.areaId === area.id);
                 const areaTotal = areaPayments.reduce((sum, p) => sum + p.amount, 0);
                 
                 return (
