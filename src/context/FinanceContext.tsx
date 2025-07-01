@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useFirebaseAuth } from './FirebaseAuthContext';
 import { useFirebaseData } from './FirebaseDataContext';
@@ -108,10 +107,10 @@ interface FinanceContextType {
   getAreaPayments: (areaId: string) => Payment[];
   getCurrentAreaPayments: () => Payment[];
   getCustomerPayments: (customerId: string) => Payment[];
-  updateCustomerPaymentStatus: (customerId: string, isFullyPaid: boolean) => Promise<void>;
+  updateCustomerPaymentStatus: (customerId: string) => Promise<void>;
   calculateAllPenalties: () => void;
   calculateTotalEarnings: () => number;
-  addPaymentBatch: (payments: Omit<Payment, 'id'>[]) => Promise<void>;
+  addPaymentBatch: (payments: Omit<Payment, 'id'>[]) => Promise<{ success: boolean; errors: string[] }>;
   recalculateAllCustomerPayments: () => void;
   getDailyCollections: (date: string) => Payment[];
 }
@@ -439,8 +438,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return payments.filter(payment => payment.customerId === customerId);
   };
 
-  const updateCustomerPaymentStatus = async (customerId: string, isFullyPaid: boolean) => {
-    await updateCustomer(customerId, { isFullyPaid });
+  const updateCustomerPaymentStatus = async (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) return;
+    
+    const customerPayments = getCustomerPayments(customerId);
+    const totalPaid = customerPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const isFullyPaid = totalPaid >= customer.totalAmountToBePaid;
+    
+    await updateCustomer(customerId, { 
+      totalPaid,
+      isFullyPaid,
+      paidInstallments: customerPayments.length,
+      balanceAmount: customer.totalAmountToBePaid - totalPaid
+    });
   };
 
   const calculateAllPenalties = () => {
@@ -452,10 +463,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return payments.reduce((sum, payment) => sum + (payment.amount * 0.1), 0);
   };
 
-  const addPaymentBatch = async (batchPayments: Omit<Payment, 'id'>[]) => {
+  const addPaymentBatch = async (batchPayments: Omit<Payment, 'id'>[]): Promise<{ success: boolean; errors: string[] }> => {
+    const errors: string[] = [];
+    let successCount = 0;
+    
     for (const payment of batchPayments) {
-      await addPayment(payment);
+      try {
+        await addPayment(payment);
+        successCount++;
+      } catch (error) {
+        console.error('Error adding payment:', error);
+        errors.push(`Failed to add payment for ${payment.customerName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
+    
+    return {
+      success: successCount === batchPayments.length,
+      errors
+    };
   };
 
   const recalculateAllCustomerPayments = () => {
