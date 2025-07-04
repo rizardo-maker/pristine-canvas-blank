@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { FirebaseAuthProvider } from '@/context/FirebaseAuthContext';
 import { FirebaseDataProvider } from '@/context/FirebaseDataContext';
 import { FinanceProvider } from '@/context/FinanceContext';
-import { LocalAuthProvider } from '@/context/LocalAuthContext';
+import { AuthProvider } from '@/context/LocalAuthContext';
 import Layout from '@/components/layout/Layout';
 import Index from '@/pages/Index';
 import Dashboard from '@/pages/Dashboard';
@@ -232,12 +232,12 @@ const AppContent = () => {
 function App() {
   return (
     <FirebaseAuthProvider>
-      <LocalAuthProvider>
+      <AuthProvider>
         <Router>
           <AppContent />
           <Toaster />
         </Router>
-      </LocalAuthProvider>
+      </AuthProvider>
     </FirebaseAuthProvider>
   );
 }
