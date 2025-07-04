@@ -11,7 +11,7 @@ export interface UseFirebaseRealtimeOptions {
 }
 
 export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions) {
-  const { firebaseUser } = useFirebaseAuth();
+  const { user } = useFirebaseAuth();
   const { toast } = useToast();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +22,7 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
 
   // Monitor connection status
   useEffect(() => {
-    if (!enabled || !firebaseUser) return;
+    if (!enabled || !user) return;
 
     const connectedRef = ref(realtimeDb, '.info/connected');
     const unsubscribe = onValue(connectedRef, (snapshot) => {
@@ -37,11 +37,11 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
     });
 
     return () => off(connectedRef, 'value', unsubscribe);
-  }, [enabled, firebaseUser]);
+  }, [enabled, user]);
 
   // Subscribe to data changes
   useEffect(() => {
-    if (!enabled || !firebaseUser || !path) {
+    if (!enabled || !user || !path) {
       setData(null);
       setLoading(false);
       return;
@@ -50,7 +50,7 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
     setLoading(true);
     setError(null);
 
-    const userPath = `/users/${firebaseUser.uid}/${path}`;
+    const userPath = `/users/${user.id}/${path}`;
     const dataRef = ref(realtimeDb, userPath);
     
     console.log(`Setting up Firebase listener for: ${userPath}`);
@@ -60,7 +60,7 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       (snapshot) => {
         try {
           const value = snapshot.val();
-          console.log(`Firebase data received for ${userPath}:`, value ? Object.keys(value).length + ' items' : 'null');
+          console.log(`Firebase data received for ${userPath}:`, value);
           setData(value);
           setError(null);
         } catch (err) {
@@ -87,16 +87,16 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       console.log(`Cleaning up Firebase listener for: ${userPath}`);
       off(dataRef, 'value', unsubscribe);
     };
-  }, [enabled, firebaseUser, path, toast]);
+  }, [enabled, user, path, toast]);
 
   // Write operations
   const writeData = useCallback(async (newData: any, itemId?: string) => {
-    if (!firebaseUser) {
+    if (!user) {
       throw new Error('User not authenticated');
     }
 
     try {
-      const userPath = `/users/${firebaseUser.uid}/${path}`;
+      const userPath = `/users/${user.id}/${path}`;
       const targetRef = itemId ? ref(realtimeDb, `${userPath}/${itemId}`) : ref(realtimeDb, userPath);
       
       const dataWithTimestamp = {
@@ -119,15 +119,15 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       });
       throw error;
     }
-  }, [firebaseUser, path, toast]);
+  }, [user, path, toast]);
 
   const pushData = useCallback(async (newData: any) => {
-    if (!firebaseUser) {
+    if (!user) {
       throw new Error('User not authenticated');
     }
 
     try {
-      const userPath = `/users/${firebaseUser.uid}/${path}`;
+      const userPath = `/users/${user.id}/${path}`;
       const listRef = ref(realtimeDb, userPath);
       
       const dataWithTimestamp = {
@@ -151,15 +151,15 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       });
       throw error;
     }
-  }, [firebaseUser, path, toast]);
+  }, [user, path, toast]);
 
   const updateData = useCallback(async (updates: any, itemId?: string) => {
-    if (!firebaseUser) {
+    if (!user) {
       throw new Error('User not authenticated');
     }
 
     try {
-      const userPath = `/users/${firebaseUser.uid}/${path}`;
+      const userPath = `/users/${user.id}/${path}`;
       const targetRef = itemId ? ref(realtimeDb, `${userPath}/${itemId}`) : ref(realtimeDb, userPath);
       
       const updatesWithTimestamp = {
@@ -182,15 +182,15 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       });
       throw error;
     }
-  }, [firebaseUser, path, toast]);
+  }, [user, path, toast]);
 
   const deleteData = useCallback(async (itemId: string) => {
-    if (!firebaseUser) {
+    if (!user) {
       throw new Error('User not authenticated');
     }
 
     try {
-      const userPath = `/users/${firebaseUser.uid}/${path}/${itemId}`;
+      const userPath = `/users/${user.id}/${path}/${itemId}`;
       const targetRef = ref(realtimeDb, userPath);
       
       console.log(`Deleting from Firebase: ${userPath}`);
@@ -207,7 +207,7 @@ export function useFirebaseRealtime<T = any>(options: UseFirebaseRealtimeOptions
       });
       throw error;
     }
-  }, [firebaseUser, path, toast]);
+  }, [user, path, toast]);
 
   return {
     data,

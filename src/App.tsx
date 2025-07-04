@@ -1,245 +1,104 @@
 
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from '@/components/ui/toaster';
-import { FirebaseAuthProvider } from '@/context/FirebaseAuthContext';
-import { FirebaseDataProvider } from '@/context/FirebaseDataContext';
-import { FinanceProvider } from '@/context/FinanceContext';
-import { AuthProvider } from '@/context/LocalAuthContext';
-import Layout from '@/components/layout/Layout';
-import Index from '@/pages/Index';
-import Dashboard from '@/pages/Dashboard';
-import CustomerManagement from '@/pages/CustomerManagement';
-import PaymentEntry from '@/pages/PaymentEntry';
-import DailyCollections from '@/pages/collections/DailyCollections';
-import WeeklyCollections from '@/pages/collections/WeeklyCollections';
-import MonthlyCollections from '@/pages/collections/MonthlyCollections';
-import Reports from '@/pages/Reports';
-import Settings from '@/pages/Settings';
-import BatchPaymentEntry from '@/pages/BatchPaymentEntry';
-import Areas from '@/pages/Areas';
-import Customers from '@/pages/Customers';
-import AppEntry from '@/pages/AppEntry';
-import LocalAuth from '@/pages/auth/LocalAuth';
-import SignIn from '@/pages/auth/SignIn';
-import SignUp from '@/pages/auth/SignUp';
-import RequireAuth from '@/components/auth/RequireAuth';
-import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
-import { useAuth } from '@/context/LocalAuthContext';
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { FinanceProvider } from "./context/FinanceContext";
+import { AuthProvider } from "./context/LocalAuthContext";
+import { FirebaseAuthProvider } from "./context/FirebaseAuthContext";
+import { FirebaseDataProvider } from "./context/FirebaseDataContext";
+import { useEffect } from "react";
+import { initializeMobileApp } from "./utils/mobileUtils";
+import { ThemeProvider as NextThemesProvider } from "next-themes";
 
-const AppContent = () => {
-  const { user: firebaseUser, isLoading: firebaseLoading } = useFirebaseAuth();
-  const { user: localUser, isLoading: localLoading } = useAuth();
+import Layout from "./components/layout/Layout";
+import Dashboard from "./pages/Dashboard";
+import Customers from "./pages/Customers";
+import DailyCollections from "./pages/collections/DailyCollections";
+import WeeklyCollections from "./pages/collections/WeeklyCollections";
+import MonthlyCollections from "./pages/collections/MonthlyCollections";
+import Posting from "./pages/Posting";
+import Reports from "./pages/Reports";
+import BalanceSheet from "./pages/BalanceSheet";
+import NotFound from "./pages/NotFound";
+import CustomerDetail from "./pages/CustomerDetail";
+import PostingDetails from "./pages/PostingDetails";
+import Areas from "./pages/Areas";
+import LocalAuth from "./pages/auth/LocalAuth";
+import SignIn from "./pages/auth/SignIn";
+import SignUp from "./pages/auth/SignUp";
+import RequireAuth from "./components/auth/RequireAuth";
+import Index from "./pages/Index";
+import { VoiceNavigationProvider } from "./context/VoiceNavigationContext";
+import { voiceNavRoutes } from "./config/voice-nav-routes";
+import AppEntry from "./pages/AppEntry";
+import AreaReports from "./pages/AreaReports";
 
-  const isLoading = firebaseLoading || localLoading;
-  const isAuthenticated = firebaseUser || localUser;
+const queryClient = new QueryClient();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return (
-    <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<Index />} />
-      <Route path="/sign-in" element={<SignIn />} />
-      <Route path="/sign-up" element={<SignUp />} />
-      <Route path="/auth" element={<LocalAuth />} />
-      
-      {/* Protected routes */}
-      <Route path="/app-entry" element={
-        <RequireAuth>
-          <AppEntry />
-        </RequireAuth>
-      } />
-      
-      <Route path="/areas" element={
-        <RequireAuth>
-          <FinanceProvider>
-            <Layout>
-              <Areas />
-            </Layout>
-          </FinanceProvider>
-        </RequireAuth>
-      } />
-      
-      {/* Firebase authenticated routes */}
-      {firebaseUser && (
-        <>
-          <Route path="/dashboard" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/customers" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <CustomerManagement />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/payments" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <PaymentEntry />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/batch-payments" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <BatchPaymentEntry />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/collections/daily" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <DailyCollections />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/collections/weekly" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <WeeklyCollections />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/collections/monthly" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <MonthlyCollections />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/reports" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <Reports />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-          <Route path="/settings" element={
-            <FirebaseDataProvider>
-              <FinanceProvider>
-                <Layout>
-                  <Settings />
-                </Layout>
-              </FinanceProvider>
-            </FirebaseDataProvider>
-          } />
-        </>
-      )}
-      
-      {/* Local authenticated routes */}
-      {localUser && (
-        <>
-          <Route path="/dashboard" element={
-            <FinanceProvider>
-              <Layout>
-                <Dashboard />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/customers" element={
-            <FinanceProvider>
-              <Layout>
-                <Customers />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/payments" element={
-            <FinanceProvider>
-              <Layout>
-                <PaymentEntry />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/batch-payments" element={
-            <FinanceProvider>
-              <Layout>
-                <BatchPaymentEntry />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/collections/daily" element={
-            <FinanceProvider>
-              <Layout>
-                <DailyCollections />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/collections/weekly" element={
-            <FinanceProvider>
-              <Layout>
-                <WeeklyCollections />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/collections/monthly" element={
-            <FinanceProvider>
-              <Layout>
-                <MonthlyCollections />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/reports" element={
-            <FinanceProvider>
-              <Layout>
-                <Reports />
-              </Layout>
-            </FinanceProvider>
-          } />
-          <Route path="/settings" element={
-            <FinanceProvider>
-              <Layout>
-                <Settings />
-              </Layout>
-            </FinanceProvider>
-          } />
-        </>
-      )}
-      
-      {/* Catch all route */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <RequireAuth>
+      <VoiceNavigationProvider routes={voiceNavRoutes}>
+        <Layout>{children}</Layout>
+      </VoiceNavigationProvider>
+    </RequireAuth>
   );
 };
 
-function App() {
+const App = () => {
+  useEffect(() => {
+    initializeMobileApp();
+  }, []);
+
   return (
-    <FirebaseAuthProvider>
-      <AuthProvider>
-        <Router>
-          <AppContent />
-          <Toaster />
-        </Router>
-      </AuthProvider>
-    </FirebaseAuthProvider>
+    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <FirebaseAuthProvider>
+          <FirebaseDataProvider>
+            <AuthProvider>
+              <FinanceProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Sonner />
+                  <BrowserRouter>
+                    <Routes>
+                      {/* Public routes */}
+                      <Route path="/" element={<Index />} />
+                      <Route path="/auth" element={<LocalAuth />} />
+                      <Route path="/sign-in" element={<SignIn />} />
+                      <Route path="/sign-up" element={<SignUp />} />
+                      
+                      {/* Entry point for authenticated users */}
+                      <Route path="/app-entry" element={<ProtectedRoute><AppEntry /></ProtectedRoute>} />
+
+                      {/* Protected routes */}
+                      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                      <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+                      <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
+                      <Route path="/collections/daily" element={<ProtectedRoute><DailyCollections /></ProtectedRoute>} />
+                      <Route path="/collections/weekly" element={<ProtectedRoute><WeeklyCollections /></ProtectedRoute>} />
+                      <Route path="/collections/monthly" element={<ProtectedRoute><MonthlyCollections /></ProtectedRoute>} />
+                      <Route path="/posting" element={<ProtectedRoute><Posting /></ProtectedRoute>} />
+                      <Route path="/posting/:date" element={<ProtectedRoute><PostingDetails /></ProtectedRoute>} />
+                      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+                      <Route path="/areas/:areaId/reports" element={<ProtectedRoute><AreaReports /></ProtectedRoute>} />
+                      <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
+                      <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
+                      
+                      {/* Not Found Route */}
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </BrowserRouter>
+                </TooltipProvider>
+              </FinanceProvider>
+            </AuthProvider>
+          </FirebaseDataProvider>
+        </FirebaseAuthProvider>
+      </QueryClientProvider>
+    </NextThemesProvider>
   );
-}
+};
 
 export default App;

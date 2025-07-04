@@ -1,26 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useFinance, Customer, Area } from '@/context/FinanceContext';
+import { useFinance, Customer } from '@/context/FinanceContext';
 import PageTitle from '@/components/ui/PageTitle';
+import CustomerStatsCards from '@/components/customers/CustomerStatsCards';
+import InterestTracker from '@/components/customers/InterestTracker';
+import AdvancedCustomerLists from '@/components/customers/AdvancedCustomerLists';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { 
+  Table, 
+  TableBody, 
+  TableCaption, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
 } from '@/components/ui/table';
 import {
   Dialog,
@@ -30,7 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+  DialogClose,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,391 +36,827 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Calendar, Plus, Search, Trash2, Download, FileText, Printer, AlertTriangle, FileScan } from 'lucide-react';
 import { toast } from 'sonner';
-import { Calendar, MapPin, Users, ArrowRight, Plus, Trash2, Edit } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { exportCustomersToPDF, exportCustomersToExcel, printCustomerReport } from '@/utils/customerExport';
+import { processImageWithOCR } from '@/utils/ocrService';
+import { useVoiceAction } from '@/hooks/useVoiceAction';
 
 const Customers = () => {
-  const { 
-    customers, 
-    addCustomer, 
-    deleteCustomer, 
-    areas, 
-    currentAreaId,
-    getAreaCustomers
-  } = useFinance();
+  const { getCurrentAreaCustomers, addCustomer, deleteCustomer, currentAreaId, getAreaById, calculateAllPenalties } = useFinance();
   const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
+  const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Voice command to open the "Add Customer" dialog
+  useVoiceAction(['add customer', 'new customer'], (_transcript) => {
+    if (!isAddDialogOpen) {
+      setIsAddDialogOpen(true);
+      toast.info('Opening form to add a new customer.');
+    }
+  });
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({
+  // Refs for keyboard navigation
+  const serialNumberRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const issuedDateRef = useRef<HTMLInputElement>(null);
+  const totalAmountGivenRef = useRef<HTMLInputElement>(null);
+  const interestAmountRef = useRef<HTMLInputElement>(null);
+  const numberOfDaysRef = useRef<HTMLInputElement>(null);
+  const numberOfWeeksRef = useRef<HTMLInputElement>(null);
+  const numberOfMonthsRef = useRef<HTMLInputElement>(null);
+  
+  // Get only customers for current area
+  const customers = getCurrentAreaCustomers();
+  const currentArea = currentAreaId ? getAreaById(currentAreaId) : null;
+  
+  // Form state for new customer
+  const [formData, setFormData] = useState({
+    serialNumber: '',
     name: '',
     address: '',
     issuedDate: new Date().toISOString().split('T')[0],
     totalAmountGiven: 0,
     interestAmount: 0,
-    numberOfDays: 30,
-    numberOfWeeks: 4,
-    numberOfMonths: 1,
+    numberOfDays: 0,
     paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly',
+    numberOfWeeks: 0,
+    numberOfMonths: 0,
   });
-  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] = useState(false);
-  const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setNewCustomer(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handlePaymentCategoryChange = (value: 'daily' | 'weekly' | 'monthly') => {
-    setNewCustomer(prev => ({
-      ...prev,
-      paymentCategory: value,
-    }));
-  };
-
-  const handleAddCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.address || !newCustomer.issuedDate || 
-        !newCustomer.totalAmountGiven || !newCustomer.interestAmount || !newCustomer.numberOfDays) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      const totalAmountToBePaid = newCustomer.totalAmountGiven + newCustomer.interestAmount;
-      const serialNumber = `CID${Date.now().toString().slice(-8)}`;
-      const endDate = new Date(newCustomer.issuedDate);
-      endDate.setDate(endDate.getDate() + newCustomer.numberOfDays);
-      
-      const customerToAdd: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> = {
-        serialNumber,
-        name: newCustomer.name,
-        area: currentAreaId || 'default',
-        mobile: '',
-        loanAmount: newCustomer.totalAmountGiven,
-        installmentAmount: totalAmountToBePaid / newCustomer.numberOfDays,
-        collectionType: newCustomer.paymentCategory,
-        startDate: newCustomer.issuedDate,
-        endDate: endDate.toISOString().split('T')[0],
-        address: newCustomer.address,
-        guarantor: '',
-        guarantorMobile: '',
-        totalInstallments: newCustomer.numberOfDays,
-        paidInstallments: 0,
-        balanceAmount: totalAmountToBePaid,
-        status: 'active' as const,
-        totalAmountGiven: newCustomer.totalAmountGiven,
-        totalAmountToBePaid,
-        totalPaid: 0,
-        interestAmount: newCustomer.interestAmount,
-        interestPercentage: (newCustomer.interestAmount / newCustomer.totalAmountGiven) * 100,
-        penaltyAmount: 0,
-        dailyAmount: totalAmountToBePaid / newCustomer.numberOfDays,
-        paymentCategory: newCustomer.paymentCategory,
-        issuedDate: newCustomer.issuedDate,
-        deadlineDate: endDate.toISOString().split('T')[0],
-        isFullyPaid: false,
-        areaId: currentAreaId || 'default',
-        numberOfDays: newCustomer.numberOfDays,
-        numberOfWeeks: newCustomer.numberOfWeeks,
-        numberOfMonths: newCustomer.numberOfMonths
-      };
-
-      await addCustomer(customerToAdd);
-      
-      toast.success(`Customer "${newCustomer.name}" added successfully`);
-      setIsDialogOpen(false);
-      setNewCustomer({
-        name: '',
-        address: '',
-        issuedDate: new Date().toISOString().split('T')[0],
-        totalAmountGiven: 0,
-        interestAmount: 0,
-        numberOfDays: 30,
-        numberOfWeeks: 4,
-        numberOfMonths: 1,
-        paymentCategory: 'daily' as 'daily' | 'weekly' | 'monthly',
-      });
-    } catch (error) {
-      console.error('Error adding customer:', error);
-      toast.error('Failed to add customer');
-    }
-  };
-
-  const confirmDeleteCustomer = (id: string) => {
-    setCustomerToDelete(id);
-    setIsDeleteConfirmationOpen(true);
-  };
-
-  const handleCloseDeleteConfirmation = () => {
-    setIsDeleteConfirmationOpen(false);
-    setCustomerToDelete(null);
-  };
-
-  const handleDeleteCustomer = async () => {
-    if (customerToDelete) {
-      await deleteCustomer(customerToDelete);
-      toast.success('Customer deleted successfully');
-      handleCloseDeleteConfirmation();
-    }
-  };
   
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: name === 'totalAmountGiven' || name === 'interestAmount' || name === 'numberOfDays' || name === 'numberOfWeeks' || name === 'numberOfMonths'
+        ? parseFloat(value) || 0 
+        : value,
     });
   };
 
+  const handlePaymentCategoryChange = (value: 'daily' | 'weekly' | 'monthly') => {
+    setFormData({
+      ...formData,
+      paymentCategory: value,
+    });
+  };
+
+  // Keyboard navigation handlers
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, nextRef?: React.RefObject<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (nextRef?.current) {
+        nextRef.current.focus();
+      }
+    }
+  };
+
+  const handleFinalFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddCustomer(e as any);
+    }
+  };
+  
+  const handleAddCustomer = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate form based on payment category
+    let isValid = true;
+    let errorMessage = '';
+    
+    if (!formData.serialNumber || !formData.name || !formData.address || 
+        formData.totalAmountGiven <= 0) {
+      isValid = false;
+      errorMessage = 'Please fill in all required fields correctly';
+    }
+    
+    // Validate based on payment category
+    if (formData.paymentCategory === 'daily' && formData.numberOfDays <= 0) {
+      isValid = false;
+      errorMessage = 'Please enter a valid number of days';
+    }
+    
+    if (formData.paymentCategory === 'weekly' && formData.numberOfWeeks <= 0) {
+      isValid = false;
+      errorMessage = 'Please enter a valid number of weeks';
+    }
+    
+    if (formData.paymentCategory === 'monthly' && formData.numberOfMonths <= 0) {
+      isValid = false;
+      errorMessage = 'Please enter a valid number of months';
+    }
+    
+    if (!isValid) {
+      toast.error(errorMessage);
+      return;
+    }
+    
+    // Check for duplicate serial number
+    const existingCustomer = customers.find(c => c.serialNumber === formData.serialNumber);
+    if (existingCustomer) {
+      toast.error('A customer with this serial number already exists');
+      return;
+    }
+    
+    // Set numberOfDays based on payment category if not set
+    let finalFormData = { ...formData };
+    if (formData.paymentCategory === 'weekly' && formData.numberOfDays === 0) {
+      finalFormData.numberOfDays = formData.numberOfWeeks * 7;
+    } else if (formData.paymentCategory === 'monthly' && formData.numberOfDays === 0) {
+      finalFormData.numberOfDays = formData.numberOfMonths * 30;
+    }
+    
+    addCustomer(finalFormData);
+    toast.success('Customer added successfully');
+    
+    // Reset form
+    setFormData({
+      serialNumber: '',
+      name: '',
+      address: '',
+      issuedDate: new Date().toISOString().split('T')[0],
+      totalAmountGiven: 0,
+      interestAmount: 0,
+      numberOfDays: 0,
+      paymentCategory: 'daily',
+      numberOfWeeks: 0,
+      numberOfMonths: 0,
+    });
+    
+    setIsAddDialogOpen(false);
+  };
+  
+  const handleDeleteCustomer = async () => {
+    if (!customerToDelete) return;
+    
+    try {
+      await deleteCustomer(customerToDelete);
+      setCustomerToDelete(null);
+    } catch (error) {
+      toast.error('Failed to delete customer. Please try again.');
+      console.error('Error deleting customer:', error);
+    }
+  };
+
+  const handleCalculatePenalties = () => {
+    calculateAllPenalties();
+    toast.success('Penalties calculated for all overdue customers');
+  };
+
+  // OCR Handlers
+  const handleOcrImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsOcrRunning(true);
+    setOcrProgress(0);
+    toast.info('Scanning image for customer details...');
+
+    // The PSM parameter is no longer needed as the service tries multiple modes internally.
+    const text = await processImageWithOCR(file, setOcrProgress);
+
+    setIsOcrRunning(false);
+
+    if (text) {
+      parseCustomerText(text);
+    }
+    
+    // Reset file input to allow re-selection of the same file
+    if (ocrFileInputRef.current) {
+      ocrFileInputRef.current.value = '';
+    }
+  };
+
+  const parseCustomerText = (text: string) => {
+    console.log("Raw OCR for customer:", text);
+
+    if (!text.trim()) {
+      toast.error('No text detected in the image.');
+      return;
+    }
+
+    const newFormData = { ...formData };
+    let fieldsFound = 0;
+
+    // Helper to find a value near a label in the text
+    const findValueNearLabel = (label: string, text: string, pattern: RegExp): string | null => {
+      try {
+        // Allow newlines between words in the label
+        const labelRegex = new RegExp(label.replace(/\s+/g, '[\\s\\S]+'), 'i');
+        const match = text.match(labelRegex);
+        if (!match || typeof match.index === 'undefined') return null;
+        
+        // Search in a window of characters after the label
+        const searchWindow = text.substring(match.index + match[0].length, match.index + match[0].length + 100);
+        const valueMatch = searchWindow.match(pattern);
+
+        return valueMatch ? valueMatch[0].trim() : null;
+      } catch (e) {
+        console.error("Error finding value for label:", label, e);
+        return null;
+      }
+    };
+    
+    const cleanNumeric = (str: string | null) => str ? str.replace(/[^0-9.]/g, '') : null;
+    const cleanName = (str: string | null) => str ? str.replace(/[^a-zA-Z\s]/g, '').trim() : null;
+
+    // Regex patterns for different fields
+    const serialPattern = /\d+/;
+    const namePattern = /[a-zA-Z]+(?:\s[a-zA-Z]+)*/;
+    const addressPattern = /([a-zA-Z0-9\s,.-]+)/;
+    const datePattern = /\d{4}-\d{2}-\d{2}/;
+    const daysPattern = /(\d+)\s*days/;
+    const amountPattern = /[₹$]?\s*[\d,]+\.?\d*/;
+
+    let serialNumber = findValueNearLabel('Serial Number', text, serialPattern);
+    let name = findValueNearLabel('Customer Name', text, namePattern);
+    let address = findValueNearLabel('Address', text, addressPattern);
+    let issuedDate = findValueNearLabel('Issued Date', text, datePattern);
+    let term = findValueNearLabel('Term', text, daysPattern);
+    let principal = findValueNearLabel('Principal', text, amountPattern);
+    let interest = findValueNearLabel('Interest Amount', text, amountPattern);
+
+    if (serialNumber) { newFormData.serialNumber = serialNumber; fieldsFound++; }
+    if (name) { newFormData.name = cleanName(name) || ''; fieldsFound++; }
+    if (address) { newFormData.address = address.split('\n')[0].trim(); fieldsFound++; }
+    if (issuedDate) { newFormData.issuedDate = issuedDate; fieldsFound++; }
+    if (principal) { 
+        newFormData.totalAmountGiven = parseFloat(cleanNumeric(principal) || '0');
+        fieldsFound++;
+    }
+    if (interest) {
+        newFormData.interestAmount = parseFloat(cleanNumeric(interest) || '0');
+        fieldsFound++;
+    }
+    if (term) {
+        const daysMatch = term.match(/(\d+)/);
+        if (daysMatch) {
+            newFormData.numberOfDays = parseInt(daysMatch[1], 10);
+            newFormData.paymentCategory = 'daily';
+            fieldsFound++;
+        }
+    }
+    
+    if (fieldsFound > 0) {
+      setFormData(newFormData);
+      toast.success(`${fieldsFound} field(s) populated from the image. Please verify.`, {
+        description: "Review the extracted details before saving.",
+        duration: 5000,
+      });
+    } else {
+      toast.warning('Could not find customer details. Check the image quality and format.');
+    }
+  };
+
+  // Export handlers
+  const handleExportPDF = () => {
+    try {
+      exportCustomersToPDF(filteredCustomers, currentArea?.name);
+      toast.success('Customer report exported as PDF successfully');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Failed to export PDF. Please try again.');
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      exportCustomersToExcel(filteredCustomers, currentArea?.name);
+      toast.success('Customer report exported as Excel successfully');
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      toast.error('Failed to export Excel. Please try again.');
+    }
+  };
+
+  const handlePrint = () => {
+    try {
+      printCustomerReport(filteredCustomers, currentArea?.name);
+      toast.success('Print dialog opened');
+    } catch (error) {
+      console.error('Error printing:', error);
+      toast.error('Failed to open print dialog. Please try again.');
+    }
+  };
+  
+  // Filter customers based on search term
+  const filteredCustomers = customers.filter(customer => 
+    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.serialNumber.includes(searchTerm)
+  );
+
+  // Check if customer is overdue
+  const isOverdue = (customer: Customer) => {
+    if (!customer.deadlineDate) return false;
+    const currentDate = new Date();
+    const deadlineDate = new Date(customer.deadlineDate);
+    return currentDate > deadlineDate && !customer.isFullyPaid;
+  };
+
+  // Calculate periods for display
+  const calculatePeriods = () => {
+    if (formData.paymentCategory === 'daily') {
+      return formData.numberOfDays;
+    } else if (formData.paymentCategory === 'weekly') {
+      return formData.numberOfWeeks;
+    } else {
+      return formData.numberOfMonths;
+    }
+  };
+
+  // Calculate total days for calculation
+  const calculateTotalDays = () => {
+    if (formData.paymentCategory === 'daily') {
+      return formData.numberOfDays;
+    } else if (formData.paymentCategory === 'weekly') {
+      return formData.numberOfWeeks * 7;
+    } else {
+      return formData.numberOfMonths * 30;
+    }
+  };
+  
   return (
     <div className="space-y-6 animate-fade-up">
       <PageTitle 
-        title="Customer Management" 
-        subtitle="Add, view, and manage your finance customers"
+        title={`Customers${currentArea ? ` - ${currentArea.name}` : ''}`}
+        subtitle="Manage your customer information"
       >
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              className="bg-finance-blue hover:bg-finance-blue/90"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add New Customer
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Customer</DialogTitle>
-              <DialogDescription>
-                Create a new customer profile to track loans and payments.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="customerName">Customer Name</Label>
-                  <Input 
-                    id="customerName" 
-                    name="name"
-                    placeholder="Enter customer name" 
-                    value={newCustomer.name}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
-                  <Input 
-                    id="address" 
-                    name="address"
-                    placeholder="Enter address" 
-                    value={newCustomer.address}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="issuedDate">Issued Date</Label>
-                  <Input
-                    type="date"
-                    id="issuedDate"
-                    name="issuedDate"
-                    value={newCustomer.issuedDate}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="totalAmountGiven">Total Amount Given</Label>
-                  <Input
-                    type="number"
-                    id="totalAmountGiven"
-                    name="totalAmountGiven"
-                    placeholder="Enter amount given"
-                    value={newCustomer.totalAmountGiven}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="interestAmount">Interest Amount</Label>
-                  <Input
-                    type="number"
-                    id="interestAmount"
-                    name="interestAmount"
-                    placeholder="Enter interest amount"
-                    value={newCustomer.interestAmount}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="numberOfDays">Number of Days</Label>
-                  <Input
-                    type="number"
-                    id="numberOfDays"
-                    name="numberOfDays"
-                    placeholder="Enter number of days"
-                    value={newCustomer.numberOfDays}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numberOfWeeks">Number of Weeks</Label>
-                  <Input
-                    type="number"
-                    id="numberOfWeeks"
-                    name="numberOfWeeks"
-                    placeholder="Enter number of weeks"
-                    value={newCustomer.numberOfWeeks}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numberOfMonths">Number of Months</Label>
-                  <Input
-                    type="number"
-                    id="numberOfMonths"
-                    name="numberOfMonths"
-                    placeholder="Enter number of months"
-                    value={newCustomer.numberOfMonths}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="paymentCategory">Payment Category</Label>
-                <Select onValueChange={handlePaymentCategoryChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select payment category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button 
-                onClick={handleAddCustomer}
-                className="bg-finance-blue hover:bg-finance-blue/90"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Customer
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </PageTitle>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleCalculatePenalties}
+            variant="outline"
+            className="flex items-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50"
+          >
+            <AlertTriangle className="h-4 w-4" />
+            Calculate Penalties
+          </Button>
 
-      {customers.length === 0 ? (
-        <Card className="shadow-card border-none text-center">
-          <CardHeader>
-            <CardTitle>No Customers</CardTitle>
-            <CardDescription>
-              Add your first customer to get started
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pb-6">
-            <Button
-              onClick={() => setIsDialogOpen(true)}
-              className="bg-finance-blue hover:bg-finance-blue/90"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add New Customer
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="shadow-card border-none">
-          <CardHeader>
-            <CardTitle>All Customers</CardTitle>
-            <CardDescription>
-              Overview of all your customers
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Issued Date</TableHead>
-                    <TableHead>Loan Amount</TableHead>
-                    <TableHead>Interest Amount</TableHead>
-                    <TableHead className="w-[100px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {customers.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-medium">{customer.name}</TableCell>
-                      <TableCell>{customer.address}</TableCell>
-                      <TableCell>{formatDate(customer.issuedDate)}</TableCell>
-                      <TableCell>₹{customer.totalAmountGiven.toLocaleString()}</TableCell>
-                      <TableCell>₹{customer.interestAmount?.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => navigate(`/customer/${customer.id}`)}
-                            className="h-8 w-8"
-                          >
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Customer</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete {customer.name}? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => confirmDeleteCustomer(customer.id)} className="bg-red-600 hover:bg-red-700">
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                Export/Print
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={handlePrint}>
+                <Printer className="h-4 w-4 mr-2" />
+                Print Report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPDF}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportExcel}>
+                <Download className="h-4 w-4 mr-2" />
+                Export as Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-finance-blue hover:bg-finance-blue/90">
+                <Plus className="mr-2 h-4 w-4" /> Add Customer
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <div className="flex justify-between items-center gap-4">
+                  <div>
+                    <DialogTitle>Add New Customer</DialogTitle>
+                    <DialogDescription>
+                      Enter the details or scan from an image.
+                    </DialogDescription>
+                  </div>
+                  <div>
+                    <input
+                      type="file"
+                      ref={ocrFileInputRef}
+                      onChange={handleOcrImport}
+                      className="hidden"
+                      accept="image/*"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => ocrFileInputRef.current?.click()}
+                      disabled={isOcrRunning}
+                      className="w-full"
+                    >
+                      {isOcrRunning ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
+                          Scanning... ({ocrProgress}%)
+                        </>
+                      ) : (
+                        <>
+                          <FileScan className="mr-2 h-4 w-4" />
+                          Scan from Image
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </DialogHeader>
+              <form onSubmit={handleAddCustomer} className="space-y-4 mt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label htmlFor="serialNumber" className="text-sm font-medium">
+                      Serial Number
+                    </label>
+                    <Input
+                      ref={serialNumberRef}
+                      id="serialNumber"
+                      name="serialNumber"
+                      value={formData.serialNumber}
+                      onChange={handleInputChange}
+                      onKeyDown={(e) => handleKeyDown(e, nameRef)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="name" className="text-sm font-medium">
+                      Customer Name
+                    </label>
+                    <Input
+                      ref={nameRef}
+                      id="name"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      onKeyDown={(e) => handleKeyDown(e, addressRef)}
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="address" className="text-sm font-medium">
+                    Address
+                  </label>
+                  <Input
+                    ref={addressRef}
+                    id="address"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => handleKeyDown(e, issuedDateRef)}
+                    required
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label htmlFor="issuedDate" className="text-sm font-medium">
+                      Issued Date
+                    </label>
+                    <div className="relative">
+                      <Input
+                        ref={issuedDateRef}
+                        id="issuedDate"
+                        name="issuedDate"
+                        type="date"
+                        value={formData.issuedDate}
+                        onChange={handleInputChange}
+                        onKeyDown={(e) => handleKeyDown(e, totalAmountGivenRef)}
+                        required
+                      />
+                      <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="paymentCategory" className="text-sm font-medium">
+                      Payment Category
+                    </label>
+                    <Select value={formData.paymentCategory} onValueChange={handlePaymentCategoryChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label htmlFor="totalAmountGiven" className="text-sm font-medium">
+                      Total Amount Given (₹)
+                    </label>
+                    <Input
+                      ref={totalAmountGivenRef}
+                      id="totalAmountGiven"
+                      name="totalAmountGiven"
+                      type="number"
+                      min="1"
+                      step="any"
+                      value={formData.totalAmountGiven || ''}
+                      onChange={handleInputChange}
+                      onKeyDown={(e) => handleKeyDown(e, interestAmountRef)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="interestAmount" className="text-sm font-medium">
+                      Interest Amount (₹) - Optional
+                    </label>
+                    <Input
+                      ref={interestAmountRef}
+                      id="interestAmount"
+                      name="interestAmount"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={formData.interestAmount}
+                      onChange={handleInputChange}
+                      onKeyDown={(e) => {
+                        if (formData.paymentCategory === 'daily') {
+                          handleKeyDown(e, numberOfDaysRef);
+                        } else if (formData.paymentCategory === 'weekly') {
+                          handleKeyDown(e, numberOfWeeksRef);
+                        } else {
+                          handleKeyDown(e, numberOfMonthsRef);
+                        }
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  {formData.paymentCategory === 'daily' && (
+                    <div className="space-y-2">
+                      <label htmlFor="numberOfDays" className="text-sm font-medium">
+                        Number of Days *
+                      </label>
+                      <Input
+                        ref={numberOfDaysRef}
+                        id="numberOfDays"
+                        name="numberOfDays"
+                        type="number"
+                        min="1"
+                        value={formData.numberOfDays || ''}
+                        onChange={handleInputChange}
+                        onKeyDown={handleFinalFieldKeyDown}
+                        required
+                        placeholder="Enter number of days"
+                      />
+                    </div>
+                  )}
+                  
+                  {formData.paymentCategory === 'weekly' && (
+                    <div className="space-y-2">
+                      <label htmlFor="numberOfWeeks" className="text-sm font-medium">
+                        Number of Weeks *
+                      </label>
+                      <Input
+                        ref={numberOfWeeksRef}
+                        id="numberOfWeeks"
+                        name="numberOfWeeks"
+                        type="number"
+                        min="1"
+                        value={formData.numberOfWeeks || ''}
+                        onChange={handleInputChange}
+                        onKeyDown={handleFinalFieldKeyDown}
+                        required
+                        placeholder="Enter number of weeks"
+                      />
+                    </div>
+                  )}
+                  
+                  {formData.paymentCategory === 'monthly' && (
+                    <div className="space-y-2">
+                      <label htmlFor="numberOfMonths" className="text-sm font-medium">
+                        Number of Months *
+                      </label>
+                      <Input
+                        ref={numberOfMonthsRef}
+                        id="numberOfMonths"
+                        name="numberOfMonths"
+                        type="number"
+                        min="1"
+                        value={formData.numberOfMonths || ''}
+                        onChange={handleInputChange}
+                        onKeyDown={handleFinalFieldKeyDown}
+                        required
+                        placeholder="Enter number of months"
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {/* Show calculated values */}
+                {formData.totalAmountGiven > 0 && calculatePeriods() > 0 && (
+                  <div className="p-4 bg-muted/50 rounded-lg space-y-2">
+                    <h4 className="font-medium text-sm">Calculated Values:</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Total to be paid:</span>
+                        <p className="font-semibold">₹{(formData.totalAmountGiven + formData.interestAmount).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Installment amount:</span>
+                        <p className="font-semibold">
+                          ₹{calculatePeriods() > 0 ? ((formData.totalAmountGiven + formData.interestAmount) / calculatePeriods()).toFixed(2) : 0}
+                          {formData.paymentCategory === 'daily' ? '/day' : formData.paymentCategory === 'weekly' ? '/week' : '/month'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Interest %:</span>
+                        <p className="font-semibold">{formData.totalAmountGiven > 0 ? ((formData.interestAmount / formData.totalAmountGiven) * 100).toFixed(2) : 0}%</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Total days:</span>
+                        <p className="font-semibold">{calculateTotalDays()} days</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Due date:</span>
+                        <p className="font-semibold">
+                          {formData.issuedDate && calculateTotalDays() > 0 ? 
+                            (() => {
+                              const date = new Date(formData.issuedDate);
+                              date.setDate(date.getDate() + calculateTotalDays());
+                              return date.toLocaleDateString('en-IN');
+                            })() : 
+                            'N/A'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-finance-blue hover:bg-finance-blue/90">
+                    Add Customer
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </PageTitle>
+      
+      <CustomerStatsCards customers={customers} />
+      
+      <div className="bg-card rounded-xl shadow-card border border-border/50 overflow-hidden">
+        <div className="p-4 border-b border-border/50">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search by name or serial number..." 
+              className="pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <Table>
+            <TableCaption>List of all customers {currentArea ? `in ${currentArea.name}` : ''}</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[100px]">Serial #</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Issued Date</TableHead>
+                <TableHead className="text-right">Amount Given</TableHead>
+                <TableHead className="text-right">Total To Be Paid</TableHead>
+                <TableHead className="text-right">Amount Paid</TableHead>
+                <TableHead className="text-right">Remaining</TableHead>
+                <TableHead className="text-right">Penalty</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredCustomers.length > 0 ? (
+                filteredCustomers.map((customer) => {
+                  const totalWithPenalty = customer.totalAmountToBePaid + (customer.penaltyAmount || 0);
+                  const remaining = totalWithPenalty - customer.totalPaid;
+                  const overdue = isOverdue(customer);
+                  
+                  return (
+                    <TableRow 
+                      key={customer.id}
+                      className={cn(
+                        "cursor-pointer hover:bg-muted/50 transition-colors",
+                        customer.isFullyPaid && "bg-finance-green-light hover:brightness-95",
+                        overdue && !customer.isFullyPaid && "bg-finance-red-light hover:brightness-95"
+                      )}
+                      onClick={() => navigate(`/customers/${customer.id}`)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {customer.serialNumber}
+                          {overdue && <AlertTriangle className="h-4 w-4 text-red-500" />}
                         </div>
                       </TableCell>
+                      <TableCell>{customer.name}</TableCell>
+                      <TableCell>
+                        <span className={cn(
+                          "px-2 py-1 text-xs rounded-full",
+                          customer.paymentCategory === 'daily' && "bg-finance-blue-light text-finance-blue",
+                          customer.paymentCategory === 'weekly' && "bg-finance-green-light text-finance-green",
+                          customer.paymentCategory === 'monthly' && "bg-purple-100 text-purple-800"
+                        )}>
+                          {customer.paymentCategory}
+                        </span>
+                      </TableCell>
+                      <TableCell>{customer.issuedDate}</TableCell>
+                      <TableCell className="text-right">₹{customer.totalAmountGiven.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{customer.totalAmountToBePaid.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{customer.totalPaid.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{remaining.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-red-600">
+                        ₹{(customer.penaltyAmount || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span 
+                          className={cn(
+                            "px-2 py-1 text-xs rounded-full",
+                            customer.isFullyPaid 
+                              ? "bg-finance-green-light text-finance-green" 
+                              : overdue
+                              ? "bg-finance-red-light text-finance-red"
+                              : "bg-finance-blue-light text-finance-blue"
+                          )}
+                        >
+                          {customer.isFullyPaid ? 'Paid' : overdue ? 'Overdue' : 'Pending'}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCustomerToDelete(customer.id);
+                          }}
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center py-6 text-muted-foreground">
+                    {searchTerm ? 'No customers match your search' : 'No customers found. Add your first customer!'}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
       
-      <AlertDialog open={isDeleteConfirmationOpen} onOpenChange={setIsDeleteConfirmationOpen}>
+      {/* Interest Tracker component */}
+      <InterestTracker />
+      
+      {/* Advanced Customer Lists component */}
+      <AdvancedCustomerLists />
+      
+      {/* Confirmation Dialog for Delete */}
+      <AlertDialog open={!!customerToDelete} onOpenChange={(open) => !open && setCustomerToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this customer? This action cannot be undone.
+              This action cannot be undone. This will permanently delete the customer and all associated payment records.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCloseDeleteConfirmation}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCustomer} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteCustomer}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

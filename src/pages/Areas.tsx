@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFinance, Area } from '@/context/FinanceContext';
@@ -46,7 +45,7 @@ import { toast } from 'sonner';
 import { Calendar, MapPin, Users, ArrowRight, Plus, Trash2, Edit } from 'lucide-react';
 
 const Areas = () => {
-  const { areas, addArea, deleteArea, setCurrentAreaId, getAreaCustomers, getAreaPayments } = useFinance();
+  const { areas, addArea, deleteArea, setCurrentArea, getAreaCustomers, getAreaPayments } = useFinance();
   const navigate = useNavigate();
 
   const [newAreaName, setNewAreaName] = useState('');
@@ -74,13 +73,13 @@ const Areas = () => {
     
     // Navigate to the dashboard with the new area
     if (newArea && newArea.id) {
-      setCurrentAreaId(newArea.id);
+      setCurrentArea(newArea.id);
       navigate('/');
     }
   };
 
   const handleSelectArea = (area: Area) => {
-    setCurrentAreaId(area.id);
+    setCurrentArea(area.id);
     navigate('/');
   };
 

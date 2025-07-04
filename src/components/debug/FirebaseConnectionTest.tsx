@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 const FirebaseConnectionTest: React.FC = () => {
-  const { firebaseUser } = useFirebaseAuth();
+  const { user } = useFirebaseAuth();
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
   const [testResults, setTestResults] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,8 +31,8 @@ const FirebaseConnectionTest: React.FC = () => {
   };
 
   const testBasicWrite = async () => {
-    if (!firebaseUser) {
-      addTestResult('❌ No Firebase user authenticated');
+    if (!user) {
+      addTestResult('❌ No user authenticated');
       return;
     }
 
@@ -41,12 +41,11 @@ const FirebaseConnectionTest: React.FC = () => {
       const testData = {
         timestamp: new Date().toISOString(),
         message: "Test write from Firebase Connection Test",
-        userId: firebaseUser.uid
+        userId: user.id
       };
 
-      await set(ref(realtimeDb, `test/basicWrite/${firebaseUser.uid}`), testData);
+      await set(ref(realtimeDb, `test/basicWrite/${user.id}`), testData);
       addTestResult('✅ Basic write successful');
-      addTestResult(`ℹ️ User ID: ${firebaseUser.uid}`);
     } catch (error) {
       addTestResult(`❌ Basic write failed: ${error}`);
       console.error('Basic write error:', error);
@@ -56,19 +55,18 @@ const FirebaseConnectionTest: React.FC = () => {
   };
 
   const testBasicRead = async () => {
-    if (!firebaseUser) {
-      addTestResult('❌ No Firebase user authenticated');
+    if (!user) {
+      addTestResult('❌ No user authenticated');
       return;
     }
 
     setIsLoading(true);
     try {
-      const testRef = ref(realtimeDb, `test/basicWrite/${firebaseUser.uid}`);
+      const testRef = ref(realtimeDb, `test/basicWrite/${user.id}`);
       onValue(testRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
           addTestResult('✅ Basic read successful - Data found');
-          addTestResult(`ℹ️ Data: ${JSON.stringify(data, null, 2)}`);
           console.log('Read test data:', data);
         } else {
           addTestResult('⚠️ Basic read successful - No data found');
@@ -86,8 +84,8 @@ const FirebaseConnectionTest: React.FC = () => {
   };
 
   const testUserDataWrite = async () => {
-    if (!firebaseUser) {
-      addTestResult('❌ No Firebase user authenticated');
+    if (!user) {
+      addTestResult('❌ No user authenticated');
       return;
     }
 
@@ -111,15 +109,14 @@ const FirebaseConnectionTest: React.FC = () => {
         status: "active" as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        userId: firebaseUser.uid
+        userId: user.id
       };
 
-      const customersRef = ref(realtimeDb, `users/${firebaseUser.uid}/customers`);
+      const customersRef = ref(realtimeDb, `users/${user.id}/customers`);
       const newCustomerRef = push(customersRef);
       await set(newCustomerRef, testCustomer);
       
       addTestResult('✅ User data write successful');
-      addTestResult(`ℹ️ Written to: users/${firebaseUser.uid}/customers/${newCustomerRef.key}`);
       console.log('Test customer created with ID:', newCustomerRef.key);
     } catch (error) {
       addTestResult(`❌ User data write failed: ${error}`);
@@ -130,24 +127,22 @@ const FirebaseConnectionTest: React.FC = () => {
   };
 
   const testUserDataRead = async () => {
-    if (!firebaseUser) {
-      addTestResult('❌ No Firebase user authenticated');
+    if (!user) {
+      addTestResult('❌ No user authenticated');
       return;
     }
 
     setIsLoading(true);
     try {
-      const customersRef = ref(realtimeDb, `users/${firebaseUser.uid}/customers`);
+      const customersRef = ref(realtimeDb, `users/${user.id}/customers`);
       onValue(customersRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
           const customerCount = Object.keys(data).length;
           addTestResult(`✅ User data read successful - Found ${customerCount} customers`);
-          addTestResult(`ℹ️ Reading from: users/${firebaseUser.uid}/customers`);
           console.log('User customers data:', data);
         } else {
           addTestResult('⚠️ User data read successful - No customers found');
-          addTestResult(`ℹ️ Reading from: users/${firebaseUser.uid}/customers`);
         }
       }, (error) => {
         addTestResult(`❌ User data read failed: ${error}`);
@@ -161,44 +156,6 @@ const FirebaseConnectionTest: React.FC = () => {
     }
   };
 
-  const testMultiDeviceSync = async () => {
-    if (!firebaseUser) {
-      addTestResult('❌ No Firebase user authenticated');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Write sync test data
-      const syncTestData = {
-        deviceId: `device_${Math.random().toString(36).substring(2, 15)}`,
-        timestamp: new Date().toISOString(),
-        message: "Multi-device sync test",
-        userId: firebaseUser.uid
-      };
-
-      await set(ref(realtimeDb, `users/${firebaseUser.uid}/syncTest`), syncTestData);
-      addTestResult('✅ Multi-device sync test data written');
-      addTestResult(`ℹ️ Device ID: ${syncTestData.deviceId}`);
-      
-      // Set up listener for real-time updates
-      const syncRef = ref(realtimeDb, `users/${firebaseUser.uid}/syncTest`);
-      onValue(syncRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          addTestResult(`🔄 Real-time update detected: ${data.message} from ${data.deviceId}`);
-        }
-      });
-      
-      addTestResult('ℹ️ Login with the same account on another device to test real-time sync');
-    } catch (error) {
-      addTestResult(`❌ Multi-device sync test failed: ${error}`);
-      console.error('Multi-device sync test error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const clearTestResults = () => {
     setTestResults([]);
   };
@@ -207,20 +164,13 @@ const FirebaseConnectionTest: React.FC = () => {
     <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          Firebase Real-time Sync Test
+          Firebase Connection Test
           <Badge variant={connectionStatus === 'connected' ? 'default' : 'destructive'}>
             {connectionStatus}
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {firebaseUser && (
-          <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm"><strong>Firebase User:</strong> {firebaseUser.email}</p>
-            <p className="text-sm"><strong>User ID:</strong> {firebaseUser.uid}</p>
-          </div>
-        )}
-
         <div className="flex flex-wrap gap-2">
           <Button onClick={testBasicWrite} disabled={isLoading}>
             Test Basic Write
@@ -233,9 +183,6 @@ const FirebaseConnectionTest: React.FC = () => {
           </Button>
           <Button onClick={testUserDataRead} disabled={isLoading}>
             Test User Data Read
-          </Button>
-          <Button onClick={testMultiDeviceSync} disabled={isLoading}>
-            Test Multi-Device Sync
           </Button>
           <Button onClick={clearTestResults} variant="outline">
             Clear Results
@@ -258,13 +205,13 @@ const FirebaseConnectionTest: React.FC = () => {
         </div>
 
         <div className="text-sm text-muted-foreground">
-          <p><strong>Real-time Sync Instructions:</strong></p>
+          <p><strong>Instructions:</strong></p>
           <ul className="list-disc list-inside space-y-1">
-            <li>Make sure you're signed in with a Firebase account</li>
-            <li>Run "Test User Data Write" to create test data</li>
-            <li>Run "Test Multi-Device Sync" to test real-time synchronization</li>
-            <li>Login with the same account on another device/tab to see real-time updates</li>
-            <li>Data is stored under users/[your-user-id]/ in Firebase Realtime Database</li>
+            <li>Make sure you're signed in with a Firebase user</li>
+            <li>Run "Test Basic Write" first to write simple test data</li>
+            <li>Run "Test Basic Read" to verify you can read the test data</li>
+            <li>Run "Test User Data Write" to create a test customer</li>
+            <li>Run "Test User Data Read" to verify you can read user-specific data</li>
             <li>Check the browser console for detailed logs</li>
           </ul>
         </div>
