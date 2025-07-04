@@ -1,26 +1,20 @@
-
 import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useFirebaseAuth } from "@/context/FirebaseAuthContext";
-import { useAuth } from "@/context/LocalAuthContext";
 
-type RequireAuthProps = {
+type RequireFirebaseAuthProps = {
   children: React.ReactNode;
 };
 
-const RequireAuth = ({ children }: RequireAuthProps) => {
-  const { user: firebaseUser, isLoading: firebaseLoading } = useFirebaseAuth();
-  const { user: localUser, isLoading: localLoading } = useAuth();
+const RequireFirebaseAuth = ({ children }: RequireFirebaseAuthProps) => {
+  const { user, isLoading } = useFirebaseAuth();
   const location = useLocation();
 
-  const isLoading = firebaseLoading || localLoading;
-
   useEffect(() => {
-    console.log("RequireAuth - Firebase user:", firebaseUser);
-    console.log("RequireAuth - Local user:", localUser);
-    console.log("RequireAuth - Is loading:", isLoading);
-    console.log("RequireAuth - Current location:", location.pathname);
-  }, [firebaseUser, localUser, isLoading, location.pathname]);
+    console.log("RequireFirebaseAuth - User:", user);
+    console.log("RequireFirebaseAuth - Is loading:", isLoading);
+    console.log("RequireFirebaseAuth - Current location:", location.pathname);
+  }, [user, isLoading, location.pathname]);
 
   // If still loading auth state, show a loading indicator
   if (isLoading) {
@@ -34,12 +28,8 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
     );
   }
 
-  // Check if user is authenticated (either Firebase or local)
-  const isAuthenticated = firebaseUser || localUser;
-
-  // If not authenticated, redirect to home page instead of sign-in
-  // This allows users to choose their authentication method
-  if (!isAuthenticated) {
+  // If not authenticated, redirect to home page
+  if (!user) {
     console.log("User not authenticated, redirecting to home");
     return <Navigate to="/" state={{ from: location }} replace />;
   }
@@ -49,4 +39,4 @@ const RequireAuth = ({ children }: RequireAuthProps) => {
   return <>{children}</>;
 };
 
-export default RequireAuth;
+export default RequireFirebaseAuth;

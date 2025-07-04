@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useFirebaseAuth } from './FirebaseAuthContext';
+import { useFirebaseRealtime } from '@/hooks/useFirebaseRealtime';
 import { useToast } from "@/hooks/use-toast";
-import { useLocalStorage } from '@/hooks/use-local-storage';
 
-// Define types for our data
+// Define unified data interfaces that match the existing structure
 export interface Customer {
   id: string;
   name: string;
@@ -26,6 +27,7 @@ export interface Customer {
   numberOfMonths?: number;
   penaltyAmount?: number;
   lastPenaltyCalculated?: string;
+  userId: string;
 }
 
 export interface Payment {
@@ -44,6 +46,7 @@ export interface Payment {
   customerPenaltyAmount?: number;
   customerTotalAmountGiven?: number;
   isCustomerDeleted?: boolean;
+  userId: string;
 }
 
 export interface Area {
@@ -51,9 +54,9 @@ export interface Area {
   name: string;
   description?: string;
   createdAt: string;
+  userId: string;
 }
 
-// New interface for daily interest earnings
 export interface DailyInterestEarning {
   id: string;
   date: string;
@@ -65,6 +68,7 @@ export interface DailyInterestEarning {
   isMonthlyTotal?: boolean;
   weekStartDate?: string;
   monthYear?: string;
+  userId: string;
 }
 
 interface FinanceContextType {
@@ -73,12 +77,14 @@ interface FinanceContextType {
   areas: Area[];
   dailyInterestEarnings: DailyInterestEarning[];
   currentAreaId: string | null;
-  addCustomer: (customerData: Omit<Customer, 'id' | 'totalAmountToBePaid' | 'totalPaid' | 'isFullyPaid' | 'createdAt' | 'deadlineDate' | 'dailyAmount' | 'interestPercentage' | 'installmentAmount' | 'penaltyAmount' | 'lastPenaltyCalculated'>) => Customer;
-  updateCustomer: (id: string, data: Partial<Customer>) => void;
+  isLoading: boolean;
+  isConnected: boolean;
+  addCustomer: (customerData: Omit<Customer, 'id' | 'totalAmountToBePaid' | 'totalPaid' | 'isFullyPaid' | 'createdAt' | 'deadlineDate' | 'dailyAmount' | 'interestPercentage' | 'installmentAmount' | 'penaltyAmount' | 'lastPenaltyCalculated' | 'userId'>) => Promise<Customer>;
+  updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
-  addPayment: (paymentData: Omit<Payment, 'id' | 'customerName'>, paymentId?: string) => void;
+  addPayment: (paymentData: Omit<Payment, 'id' | 'customerName' | 'userId'>, paymentId?: string) => Promise<void>;
   addPaymentBatch: (payments: Payment[]) => Promise<{ success: boolean; errors: string[] }>;
-  deletePayment: (id: string) => void;
+  deletePayment: (id: string) => Promise<void>;
   getCustomerPayments: (customerId: string) => Payment[];
   getCustomerBySerialNumber: (serialNumber: string) => Customer | undefined;
   updateCustomerPaymentStatus: (customerId: string) => void;
@@ -86,8 +92,8 @@ interface FinanceContextType {
   getDailyCollections: (date: string) => Payment[];
   getCurrentAreaCustomers: () => Customer[];
   getCurrentAreaPayments: () => Payment[];
-  addArea: (areaData: Omit<Area, 'id' | 'createdAt'>) => Area;
-  deleteArea: (id: string) => void;
+  addArea: (areaData: Omit<Area, 'id' | 'createdAt' | 'userId'>) => Promise<Area>;
+  deleteArea: (id: string) => Promise<void>;
   setCurrentArea: (areaId: string | null) => void;
   getAreaById: (areaId: string) => Area | null;
   getAreaCustomers: (areaId: string) => Customer[];
@@ -102,15 +108,13 @@ interface FinanceContextType {
   getPendingCustomers: () => Customer[];
   getPaidCustomers: () => Customer[];
   getOverdueCustomers: () => Customer[];
-  addDailyInterestEarning: (date: string) => void;
-  deleteDailyInterestEarning: (id: string) => void;
+  addDailyInterestEarning: (date: string) => Promise<void>;
+  deleteDailyInterestEarning: (id: string) => Promise<void>;
   getCurrentAreaDailyEarnings: () => DailyInterestEarning[];
 }
 
-// Create the context with a default value
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
-// Create a custom hook to use the context
 export const useFinance = () => {
   const context = useContext(FinanceContext);
   if (!context) {
@@ -128,27 +132,13 @@ const calculateCorrectInterestEarning = (payment: Payment, customerData: any): n
   const principal = customerData.totalAmountGiven || customerData.customerTotalAmountGiven || 0;
   const totalInterest = customerData.interestAmount || customerData.customerInterestAmount || 0;
   
-  console.log('CORRECTED Interest calculation debug:', {
-    paymentAmount: payment.amount,
-    principal,
-    totalInterest,
-    paymentId: payment.id,
-    customerName: payment.customerName
-  });
-  
   if (principal <= 0 || totalInterest <= 0) {
-    console.log('No interest to calculate: principal or interest is 0');
     return 0;
   }
   
   // CORRECTED: Calculate what portion of PRINCIPAL this payment represents
   const principalRatio = Math.min(payment.amount / principal, 1);
   const earnedInterest = principalRatio * totalInterest;
-  
-  console.log('CORRECTED Interest earned:', {
-    principalRatio: principalRatio.toFixed(4),
-    earnedInterest: earnedInterest.toFixed(2)
-  });
   
   return Math.round(earnedInterest * 100) / 100;
 };
@@ -165,17 +155,119 @@ const calculatePrincipleEarning = (payment: Payment, customerData: any): number 
   return Math.min(payment.amount, principal);
 };
 
-// Create a provider component
 export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) => {
+  const { user, firebaseUser } = useFirebaseAuth();
   const { toast } = useToast();
   
-  // Use local storage to persist data
-  const [customers, setCustomers] = useLocalStorage<Customer[]>('finance-customers', []);
-  const [payments, setPayments] = useLocalStorage<Payment[]>('finance-payments', []);
-  const [areas, setAreas] = useLocalStorage<Area[]>('finance-areas', []);
-  const [dailyInterestEarnings, setDailyInterestEarnings] = useLocalStorage<DailyInterestEarning[]>('finance-daily-earnings', []);
-  const [currentAreaId, setCurrentAreaId] = useLocalStorage<string | null>('finance-current-area', null);
-  
+  // Local state for current area selection
+  const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
+
+  // Use Firebase Realtime Database hooks
+  const {
+    data: customersData,
+    loading: customersLoading,
+    connected: customersConnected,
+    pushData: pushCustomer,
+    updateData: updateCustomerData,
+    deleteData: deleteCustomerData
+  } = useFirebaseRealtime<Record<string, Customer>>({
+    path: 'customers',
+    enabled: !!user && !!firebaseUser
+  });
+
+  const {
+    data: paymentsData,
+    loading: paymentsLoading,
+    connected: paymentsConnected,
+    pushData: pushPayment,
+    updateData: updatePaymentData,
+    deleteData: deletePaymentData
+  } = useFirebaseRealtime<Record<string, Payment>>({
+    path: 'payments',
+    enabled: !!user && !!firebaseUser
+  });
+
+  const {
+    data: areasData,
+    loading: areasLoading,
+    connected: areasConnected,
+    pushData: pushArea,
+    updateData: updateAreaData,
+    deleteData: deleteAreaData
+  } = useFirebaseRealtime<Record<string, Area>>({
+    path: 'areas',
+    enabled: !!user && !!firebaseUser
+  });
+
+  const {
+    data: dailyEarningsData,
+    loading: dailyEarningsLoading,
+    connected: dailyEarningsConnected,
+    pushData: pushDailyEarning,
+    updateData: updateDailyEarningData,
+    deleteData: deleteDailyEarningData
+  } = useFirebaseRealtime<Record<string, DailyInterestEarning>>({
+    path: 'dailyEarnings',
+    enabled: !!user && !!firebaseUser
+  });
+
+  // Convert Firebase objects to arrays
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [dailyInterestEarnings, setDailyInterestEarnings] = useState<DailyInterestEarning[]>([]);
+
+  useEffect(() => {
+    if (customersData) {
+      const customersList = Object.keys(customersData).map(key => ({
+        id: key,
+        ...customersData[key]
+      }));
+      setCustomers(customersList);
+    } else {
+      setCustomers([]);
+    }
+  }, [customersData]);
+
+  useEffect(() => {
+    if (paymentsData) {
+      const paymentsList = Object.keys(paymentsData).map(key => ({
+        id: key,
+        ...paymentsData[key]
+      }));
+      setPayments(paymentsList);
+    } else {
+      setPayments([]);
+    }
+  }, [paymentsData]);
+
+  useEffect(() => {
+    if (areasData) {
+      const areasList = Object.keys(areasData).map(key => ({
+        id: key,
+        ...areasData[key]
+      }));
+      setAreas(areasList);
+    } else {
+      setAreas([]);
+    }
+  }, [areasData]);
+
+  useEffect(() => {
+    if (dailyEarningsData) {
+      const earningsList = Object.keys(dailyEarningsData).map(key => ({
+        id: key,
+        ...dailyEarningsData[key]
+      }));
+      setDailyInterestEarnings(earningsList);
+    } else {
+      setDailyInterestEarnings([]);
+    }
+  }, [dailyEarningsData]);
+
+  const isLoading = customersLoading || paymentsLoading || areasLoading || dailyEarningsLoading;
+  const isConnected = customersConnected && paymentsConnected && areasConnected && dailyEarningsConnected;
+
   // Helper functions
   const getCustomerBySerialNumber = (serialNumber: string): Customer | undefined => {
     return customers.find(customer => customer.serialNumber === serialNumber);
@@ -193,13 +285,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     const effectiveTotalPaid = Math.min(totalPaid, totalWithPenalty);
     const isFullyPaid = totalPaid >= totalWithPenalty;
     
-    setCustomers(prevCustomers => 
-      prevCustomers.map(c => 
-        c.id === customerId 
-          ? { ...c, totalPaid: effectiveTotalPaid, isFullyPaid } 
-          : c
-      )
-    );
+    updateCustomerData({ totalPaid: effectiveTotalPaid, isFullyPaid }, customerId);
   };
   
   // Helper function to calculate total earnings including overpayments
@@ -215,7 +301,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       if (totalPaidByCustomer > 0) {
         if (totalPaidByCustomer >= totalAmountOwed) {
           // Customer has fully paid or overpaid
-          // Add all interest amount to earnings
           totalEarnings += interestAmount;
           
           // Add overpayment amount to earnings
@@ -225,7 +310,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
           }
         } else {
           // Customer has partially paid
-          // Calculate proportional interest earned using correct formula
           const principalRatio = Math.min(totalPaidByCustomer / customer.totalAmountGiven, 1);
           const earnedInterest = interestAmount * principalRatio;
           totalEarnings += earnedInterest;
@@ -269,14 +353,13 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     } else if (category === 'weekly') {
       date.setDate(date.getDate() + (periods * 7));
     } else if (category === 'monthly') {
-      // Use 30 days for a month for consistency across the app
       date.setDate(date.getDate() + (periods * 30));
     }
     
     return date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
   };
 
-  // Calculate penalty for overdue customers - SIMPLIFIED AND STANDARDIZED
+  // Calculate penalty for overdue customers
   const calculatePenalty = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
     if (!customer || !customer.deadlineDate || customer.isFullyPaid) return;
@@ -314,18 +397,10 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     const penaltyToAdd = dailyPenaltyRate * daysToCalculateFor;
 
     if (penaltyToAdd > 0) {
-      setCustomers(prevCustomers => 
-        prevCustomers.map(c => 
-          c.id === customerId 
-            ? { 
-                ...c, 
-                penaltyAmount: (c.penaltyAmount || 0) + penaltyToAdd,
-                // Record today's date to prevent double-counting
-                lastPenaltyCalculated: currentDate.toISOString().split('T')[0]
-              } 
-            : c
-        )
-      );
+      updateCustomerData({
+        penaltyAmount: (customer.penaltyAmount || 0) + penaltyToAdd,
+        lastPenaltyCalculated: currentDate.toISOString().split('T')[0]
+      }, customerId);
     }
   };
 
@@ -363,29 +438,21 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     const customer = customers.find(c => c.id === id);
     if (!customer) return;
     
-    console.log('Deleting customer and preserving payment data:', customer.name);
-    
     // Update all payments for this customer to preserve complete historical data
-    setPayments(prevPayments => 
-      prevPayments.map(payment => 
-        payment.customerId === id 
-          ? { 
-              ...payment,
-              isCustomerDeleted: true,
-              customerInterestAmount: customer.interestAmount,
-              customerTotalAmountToBePaid: customer.totalAmountToBePaid,
-              customerPaymentCategory: customer.paymentCategory,
-              customerPenaltyAmount: customer.penaltyAmount || 0,
-              customerTotalAmountGiven: customer.totalAmountGiven // CRITICAL for correct calculation
-            } 
-          : payment
-      )
-    );
+    const customerPayments = payments.filter(p => p.customerId === id);
+    for (const payment of customerPayments) {
+      await updatePaymentData({
+        isCustomerDeleted: true,
+        customerInterestAmount: customer.interestAmount,
+        customerTotalAmountToBePaid: customer.totalAmountToBePaid,
+        customerPaymentCategory: customer.paymentCategory,
+        customerPenaltyAmount: customer.penaltyAmount || 0,
+        customerTotalAmountGiven: customer.totalAmountGiven
+      }, payment.id);
+    }
     
     // Delete the customer
-    setCustomers(prevCustomers => 
-      prevCustomers.filter(customer => customer.id !== id)
-    );
+    await deleteCustomerData(id);
     
     toast({
       title: "Customer Deleted",
@@ -394,7 +461,9 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   };
   
   // CRUD operations
-  const addCustomer = (customerData: Omit<Customer, 'id' | 'totalAmountToBePaid' | 'totalPaid' | 'isFullyPaid' | 'createdAt' | 'deadlineDate' | 'dailyAmount' | 'interestPercentage' | 'installmentAmount' | 'penaltyAmount' | 'lastPenaltyCalculated'>): Customer => {
+  const addCustomer = async (customerData: Omit<Customer, 'id' | 'totalAmountToBePaid' | 'totalPaid' | 'isFullyPaid' | 'createdAt' | 'deadlineDate' | 'dailyAmount' | 'interestPercentage' | 'installmentAmount' | 'penaltyAmount' | 'lastPenaltyCalculated' | 'userId'>): Promise<Customer> => {
+    if (!user) throw new Error('User not authenticated');
+    
     // Calculate the total amount to be paid with interest amount
     const principal = customerData.totalAmountGiven;
     const interestAmount = customerData.interestAmount || 0;
@@ -405,10 +474,8 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (customerData.paymentCategory === 'daily') {
       periods = customerData.numberOfDays;
     } else if (customerData.paymentCategory === 'weekly') {
-      // For weekly customers, use the provided numberOfWeeks directly
       periods = customerData.numberOfWeeks || Math.ceil(customerData.numberOfDays / 7);
     } else {
-      // For monthly customers, use the provided numberOfMonths directly
       periods = customerData.numberOfMonths || Math.ceil(customerData.numberOfDays / 30);
     }
     
@@ -424,9 +491,9 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     // Calculate deadline date
     const deadlineDate = calculateDeadlineDate(customerData.issuedDate, periods, customerData.paymentCategory);
     
-    const newCustomer: Customer = {
-      id: Date.now().toString(),
+    const newCustomer: Omit<Customer, 'id'> = {
       ...customerData,
+      userId: user.id,
       totalAmountToBePaid,
       totalPaid: 0,
       isFullyPaid: false,
@@ -439,778 +506,367 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       createdAt: new Date().toISOString()
     };
     
-    setCustomers(prev => [...prev, newCustomer]);
+    const newCustomerId = await pushCustomer(newCustomer);
     
     toast({
       title: "Customer Added",
-      description: `${newCustomer.name} has been added successfully.`,
+      description: `${customerData.name} has been added successfully.`,
     });
     
-    return newCustomer;
+    return { id: newCustomerId!, ...newCustomer };
   };
   
-  const updateCustomer = (id: string, data: Partial<Customer>) => {
-    setCustomers(prevCustomers => 
-      prevCustomers.map(customer => {
-        if (customer.id === id) {
-          let updatedCustomer = { ...customer, ...data };
+  const updateCustomer = async (id: string, data: Partial<Customer>) => {
+    const customer = customers.find(c => c.id === id);
+    if (!customer) return;
+
+    let updatedData = { ...data };
+    
+    // If any of these values were updated, recalculate derived values
+    if (data.totalAmountGiven !== undefined || 
+        data.interestAmount !== undefined || 
+        data.numberOfDays !== undefined ||
+        data.numberOfWeeks !== undefined ||
+        data.numberOfMonths !== undefined ||
+        data.paymentCategory !== undefined ||
+        data.issuedDate !== undefined) {
           
-          // If any of these values were updated, recalculate derived values
-          if (data.totalAmountGiven !== undefined || 
-              data.interestAmount !== undefined || 
-              data.numberOfDays !== undefined ||
-              data.numberOfWeeks !== undefined ||
-              data.numberOfMonths !== undefined ||
-              data.paymentCategory !== undefined ||
-              data.issuedDate !== undefined) {
-                
-            const principal = updatedCustomer.totalAmountGiven;
-            const interestAmount = updatedCustomer.interestAmount || 0;
-            const totalAmountToBePaid = principal + interestAmount;
-            
-            // Determine periods based on payment category
-            let periods: number;
-            if (updatedCustomer.paymentCategory === 'daily') {
-              periods = updatedCustomer.numberOfDays;
-            } else if (updatedCustomer.paymentCategory === 'weekly') {
-              periods = updatedCustomer.numberOfWeeks || Math.ceil(updatedCustomer.numberOfDays / 7);
-            } else {
-              periods = updatedCustomer.numberOfMonths || Math.ceil(updatedCustomer.numberOfDays / 30);
-            }
-            
-            updatedCustomer.totalAmountToBePaid = totalAmountToBePaid;
-            updatedCustomer.dailyAmount = totalAmountToBePaid / updatedCustomer.numberOfDays;
-            updatedCustomer.interestPercentage = principal > 0 ? (interestAmount / principal) * 100 : 0;
-            updatedCustomer.installmentAmount = totalAmountToBePaid / periods;
-            
-            // Update the deadline date if issued date or periods changed
-            if (data.issuedDate !== undefined || data.numberOfDays !== undefined || 
-                data.numberOfWeeks !== undefined || data.numberOfMonths !== undefined ||
-                data.paymentCategory !== undefined) {
-              updatedCustomer.deadlineDate = calculateDeadlineDate(
-                updatedCustomer.issuedDate, 
-                periods,
-                updatedCustomer.paymentCategory
-              );
-            }
-          }
-          
-          return updatedCustomer;
-        }
-        return customer;
-      })
-    );
+      const principal = data.totalAmountGiven ?? customer.totalAmountGiven;
+      const interestAmount = data.interestAmount ?? customer.interestAmount;
+      const numberOfDays = data.numberOfDays ?? customer.numberOfDays;
+      const numberOfWeeks = data.numberOfWeeks ?? customer.numberOfWeeks;
+      const numberOfMonths = data.numberOfMonths ?? customer.numberOfMonths;
+      const paymentCategory = data.paymentCategory ?? customer.paymentCategory;
+      const issuedDate = data.issuedDate ?? customer.issuedDate;
+
+      // Recalculate derived values
+      const totalAmountToBePaid = principal + interestAmount;
+      
+      let periods: number;
+      if (paymentCategory === 'daily') {
+        periods = numberOfDays;
+      } else if (paymentCategory === 'weekly') {
+        periods = numberOfWeeks || Math.ceil(numberOfDays / 7);
+      } else {
+        periods = numberOfMonths || Math.ceil(numberOfDays / 30);
+      }
+      
+      const installmentAmount = totalAmountToBePaid / periods;
+      const dailyAmount = totalAmountToBePaid / numberOfDays;
+      const interestPercentage = principal > 0 ? (interestAmount / principal) * 100 : 0;
+      const deadlineDate = calculateDeadlineDate(issuedDate, periods, paymentCategory);
+
+      updatedData = {
+        ...updatedData,
+        totalAmountToBePaid,
+        installmentAmount,
+        dailyAmount,
+        interestPercentage,
+        deadlineDate
+      };
+    }
+    
+    await updateCustomerData(updatedData, id);
     
     toast({
       title: "Customer Updated",
-      description: "Customer information has been updated.",
-    });
-  };
-  
-  // Enhanced addPayment function with better data preservation
-  const addPayment = (paymentData: Omit<Payment, 'id' | 'customerName'>, paymentId?: string) => {
-    const customer = getCustomerBySerialNumber(paymentData.serialNumber);
-    
-    if (!customer) {
-      console.error(`Customer with serial number ${paymentData.serialNumber} not found`);
-      toast({
-        title: "Error",
-        description: `Customer with serial number ${paymentData.serialNumber} not found.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const newPayment: Payment = {
-      id: paymentId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      customerName: customer.name,
-      ...paymentData,
-      customerId: customer.id,
-      areaId: paymentData.areaId || currentAreaId || undefined,
-      // Preserve COMPLETE customer data for historical calculations
-      customerInterestAmount: customer.interestAmount,
-      customerTotalAmountToBePaid: customer.totalAmountToBePaid,
-      customerPaymentCategory: customer.paymentCategory,
-      customerPenaltyAmount: customer.penaltyAmount || 0,
-      customerTotalAmountGiven: customer.totalAmountGiven, // CRITICAL for correct calculation
-      isCustomerDeleted: false
-    };
-  
-    setPayments((prev) => [...prev, newPayment]);
-    updateCustomerPaymentStatus(customer.id);
-    
-    // Update daily interest earnings for this date
-    addDailyInterestEarning(paymentData.date);
-    
-    console.log('Payment added successfully with complete customer data:', newPayment);
-    
-    toast({
-      title: "Payment Recorded",
-      description: `Payment of ₹${paymentData.amount} recorded for ${customer.name}.`,
-    });
-  };
-
-  // Add daily interest earning calculation and storage
-  const addDailyInterestEarning = (date: string) => {
-    const existingEntry = dailyInterestEarnings.find(e => 
-      e.date === date && 
-      e.areaId === currentAreaId && 
-      !e.isWeeklyTotal && 
-      !e.isMonthlyTotal
-    );
-    
-    if (existingEntry) {
-      // Update existing entry
-      const interestEarned = calculateDailyInterestEarnings(date);
-      const principleEarned = calculateDailyPrincipleEarnings(date);
-      
-      setDailyInterestEarnings(prev =>
-        prev.map(entry =>
-          entry.id === existingEntry.id
-            ? { ...entry, totalInterestEarned: interestEarned, totalPrincipleEarned: principleEarned }
-            : entry
-        )
-      );
-    } else {
-      // Create new entry
-      const interestEarned = calculateDailyInterestEarnings(date);
-      const principleEarned = calculateDailyPrincipleEarnings(date);
-      
-      const newEntry: DailyInterestEarning = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        date,
-        totalInterestEarned: interestEarned,
-        totalPrincipleEarned: principleEarned,
-        areaId: currentAreaId || undefined,
-        createdAt: new Date().toISOString(),
-        isWeeklyTotal: false,
-        isMonthlyTotal: false
-      };
-      
-      setDailyInterestEarnings(prev => [...prev, newEntry]);
-    }
-    
-    // Check if we need to add weekly/monthly totals
-    addWeeklyTotalIfNeeded(date);
-    addMonthlyTotalIfNeeded(date);
-  };
-
-  // Calculate daily principle earnings
-  const calculateDailyPrincipleEarnings = (date: string): number => {
-    const datePayments = getCurrentAreaPayments().filter(payment => payment.date === date);
-    let totalPrincipleEarned = 0;
-
-    datePayments.forEach(payment => {
-      const customer = customers.find(c => c.id === payment.customerId);
-      
-      if (customer) {
-        const principleEarned = calculatePrincipleEarning(payment, customer);
-        totalPrincipleEarned += principleEarned;
-      } else if (payment.customerTotalAmountGiven) {
-        const principleEarned = calculatePrincipleEarning(payment, {
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalPrincipleEarned += principleEarned;
-      }
-    });
-
-    return Math.round(totalPrincipleEarned * 100) / 100;
-  };
-
-  // Add weekly total if it's end of week
-  const addWeeklyTotalIfNeeded = (date: string) => {
-    const currentDate = new Date(date);
-    const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 6 = Saturday
-    
-    // Add weekly total on Sunday (end of week)
-    if (dayOfWeek === 0) {
-      const weekStartDate = new Date(currentDate);
-      weekStartDate.setDate(currentDate.getDate() - 6);
-      const weekStart = weekStartDate.toISOString().split('T')[0];
-      
-      const weeklyInterest = calculateWeeklyInterestEarnings(weekStart);
-      const weeklyPrinciple = calculateWeeklyPrincipleEarnings(weekStart);
-      
-      const weeklyEntry: DailyInterestEarning = {
-        id: `weekly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        date,
-        totalInterestEarned: weeklyInterest,
-        totalPrincipleEarned: weeklyPrinciple,
-        areaId: currentAreaId || undefined,
-        createdAt: new Date().toISOString(),
-        isWeeklyTotal: true,
-        isMonthlyTotal: false,
-        weekStartDate: weekStart
-      };
-      
-      setDailyInterestEarnings(prev => [...prev, weeklyEntry]);
-    }
-  };
-
-  // Add monthly total if it's end of month
-  const addMonthlyTotalIfNeeded = (date: string) => {
-    const currentDate = new Date(date);
-    const nextDay = new Date(currentDate);
-    nextDay.setDate(currentDate.getDate() + 1);
-    
-    // Check if next day is first day of next month
-    if (nextDay.getDate() === 1) {
-      const month = (currentDate.getMonth() + 1).toString();
-      const year = currentDate.getFullYear().toString();
-      
-      const monthlyInterest = calculateMonthlyInterestEarnings(month, year);
-      const monthlyPrinciple = calculateMonthlyPrincipleEarnings(month, year);
-      
-      const monthlyEntry: DailyInterestEarning = {
-        id: `monthly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        date,
-        totalInterestEarned: monthlyInterest,
-        totalPrincipleEarned: monthlyPrinciple,
-        areaId: currentAreaId || undefined,
-        createdAt: new Date().toISOString(),
-        isWeeklyTotal: false,
-        isMonthlyTotal: true,
-        monthYear: `${month}/${year}`
-      };
-      
-      setDailyInterestEarnings(prev => [...prev, monthlyEntry]);
-    }
-  };
-
-  // Calculate weekly principle earnings
-  const calculateWeeklyPrincipleEarnings = (weekStartDate: string): number => {
-    const startDate = new Date(weekStartDate);
-    const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + 6);
-    endDate.setHours(23, 59, 59, 999);
-
-    const weekPayments = getCurrentAreaPayments().filter(payment => {
-      const paymentDate = new Date(payment.date);
-      return paymentDate >= startDate && paymentDate <= endDate;
-    });
-
-    let totalPrincipleEarned = 0;
-
-    weekPayments.forEach(payment => {
-      const customer = customers.find(c => c.id === payment.customerId);
-      
-      if (customer) {
-        const principleEarned = calculatePrincipleEarning(payment, customer);
-        totalPrincipleEarned += principleEarned;
-      } else if (payment.customerTotalAmountGiven) {
-        const principleEarned = calculatePrincipleEarning(payment, {
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalPrincipleEarned += principleEarned;
-      }
-    });
-
-    return Math.round(totalPrincipleEarned * 100) / 100;
-  };
-
-  // Calculate monthly principle earnings
-  const calculateMonthlyPrincipleEarnings = (month: string, year: string): number => {
-    const targetMonth = parseInt(month) - 1;
-    const targetYear = parseInt(year);
-
-    const monthPayments = getCurrentAreaPayments().filter(payment => {
-      const paymentDate = new Date(payment.date);
-      return paymentDate.getMonth() === targetMonth && paymentDate.getFullYear() === targetYear;
-    });
-
-    let totalPrincipleEarned = 0;
-
-    monthPayments.forEach(payment => {
-      const customer = customers.find(c => c.id === payment.customerId);
-      
-      if (customer) {
-        const principleEarned = calculatePrincipleEarning(payment, customer);
-        totalPrincipleEarned += principleEarned;
-      } else if (payment.customerTotalAmountGiven) {
-        const principleEarned = calculatePrincipleEarning(payment, {
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalPrincipleEarned += principleEarned;
-      }
-    });
-
-    return Math.round(totalPrincipleEarned * 100) / 100;
-  };
-
-  // Delete daily interest earning
-  const deleteDailyInterestEarning = (id: string) => {
-    setDailyInterestEarnings(prev => prev.filter(entry => entry.id !== id));
-    
-    toast({
-      title: "Entry Deleted",
-      description: "Daily earnings entry has been deleted.",
-    });
-  };
-
-  // Get current area daily earnings
-  const getCurrentAreaDailyEarnings = (): DailyInterestEarning[] => {
-    if (!currentAreaId) return dailyInterestEarnings;
-    return dailyInterestEarnings.filter(earning => earning.areaId === currentAreaId);
-  };
-
-  // New batch payment function for atomic operations
-  const addPaymentBatch = async (paymentsToAdd: Payment[]): Promise<{ success: boolean; errors: string[] }> => {
-    console.log('Starting batch payment addition for', paymentsToAdd.length, 'payments');
-    
-    const errors: string[] = [];
-    const successfulPayments: Payment[] = [];
-    
-    try {
-      // Validate all payments first
-      for (const payment of paymentsToAdd) {
-        const customer = getCustomerBySerialNumber(payment.serialNumber);
-        if (!customer) {
-          errors.push(`Customer not found for serial number: ${payment.serialNumber}`);
-          continue;
-        }
-        
-        if (payment.amount <= 0) {
-          errors.push(`Invalid amount for customer ${payment.customerName}: ${payment.amount}`);
-          continue;
-        }
-        
-        // Preserve customer data in payment
-        const enhancedPayment = {
-          ...payment,
-          customerInterestAmount: customer.interestAmount,
-          customerTotalAmountToBePaid: customer.totalAmountToBePaid,
-          customerPaymentCategory: customer.paymentCategory,
-          customerPenaltyAmount: customer.penaltyAmount || 0,
-          customerTotalAmountGiven: customer.totalAmountGiven, // Added for correct calculation
-          isCustomerDeleted: false
-        };
-        
-        successfulPayments.push(enhancedPayment);
-      }
-      
-      if (errors.length > 0) {
-        console.error('Validation errors in batch:', errors);
-        return { success: false, errors };
-      }
-      
-      // Add all payments atomically using functional state update
-      setPayments(prevPayments => {
-        const newPayments = [...prevPayments, ...successfulPayments];
-        console.log('Batch payments added to state:', successfulPayments.length);
-        return newPayments;
-      });
-      
-      // Update customer payment statuses for all affected customers IMMEDIATELY
-      const affectedCustomerIds = new Set(successfulPayments.map(p => p.customerId));
-      
-      // Use setTimeout to ensure the payments state has been updated before recalculating
-      setTimeout(() => {
-        setCustomers(prevCustomers => {
-          return prevCustomers.map(customer => {
-            if (affectedCustomerIds.has(customer.id)) {
-              // Get updated payments including the new ones
-              const allPayments = [...payments, ...successfulPayments];
-              const customerPayments = allPayments.filter(p => p.customerId === customer.id);
-              const totalPaid = customerPayments.reduce((sum, payment) => sum + payment.amount, 0);
-              const totalWithPenalty = customer.totalAmountToBePaid + (customer.penaltyAmount || 0);
-              
-              const effectiveTotalPaid = Math.min(totalPaid, totalWithPenalty);
-              const isFullyPaid = totalPaid >= totalWithPenalty;
-              
-              return { ...customer, totalPaid: effectiveTotalPaid, isFullyPaid };
-            }
-            return customer;
-          });
-        });
-      }, 100);
-      
-      console.log('Batch payment addition completed successfully');
-      
-      toast({
-        title: "Batch Payment Success",
-        description: `Successfully recorded ${successfulPayments.length} payments.`,
-      });
-      
-      return { success: true, errors: [] };
-      
-    } catch (error) {
-      console.error('Error in batch payment addition:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      
-      toast({
-        title: "Batch Payment Failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
-      
-      return { success: false, errors: [errorMessage] };
-    }
-  };
-
-  const deletePayment = (id: string) => {
-    const payment = payments.find(p => p.id === id);
-    if (!payment) return;
-    
-    setPayments(prevPayments => 
-      prevPayments.filter(p => p.id !== id)
-    );
-    
-    // Update customer payment status
-    updateCustomerPaymentStatus(payment.customerId);
-    
-    toast({
-      title: "Payment Deleted",
-      description: `Payment for ${payment.customerName} has been deleted.`,
+      description: "Customer information has been updated successfully.",
     });
   };
   
   const getCustomerPayments = (customerId: string): Payment[] => {
-    return payments.filter(payment => payment.customerId === customerId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return payments.filter(payment => payment.customerId === customerId);
+  };
+  
+  const addPayment = async (paymentData: Omit<Payment, 'id' | 'customerName' | 'userId'>, paymentId?: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    const customer = customers.find(c => c.id === paymentData.customerId);
+    const customerName = customer ? customer.name : 'Unknown Customer';
+    
+    const newPayment: Omit<Payment, 'id'> = {
+      ...paymentData,
+      userId: user.id,
+      customerName,
+      areaId: currentAreaId || paymentData.areaId
+    };
+    
+    await pushPayment(newPayment);
+    
+    // Update customer payment status after adding payment
+    updateCustomerPaymentStatus(paymentData.customerId);
+    
+    toast({
+      title: "Payment Added",
+      description: `Payment of ₹${paymentData.amount} has been recorded.`,
+    });
+  };
+
+  const addPaymentBatch = async (paymentsToAdd: Payment[]): Promise<{ success: boolean; errors: string[] }> => {
+    if (!user) return { success: false, errors: ['User not authenticated'] };
+    
+    const errors: string[] = [];
+    
+    for (const payment of paymentsToAdd) {
+      try {
+        const paymentWithUser = { ...payment, userId: user.id };
+        await pushPayment(paymentWithUser);
+        updateCustomerPaymentStatus(payment.customerId);
+      } catch (error) {
+        errors.push(`Failed to add payment for ${payment.customerName}: ${error}`);
+      }
+    }
+    
+    if (errors.length === 0) {
+      toast({
+        title: "Batch Payment Success",
+        description: `Successfully added ${paymentsToAdd.length} payments.`,
+      });
+    } else {
+      toast({
+        title: "Batch Payment Partial Success",
+        description: `Added ${paymentsToAdd.length - errors.length} payments. ${errors.length} failed.`,
+        variant: "destructive",
+      });
+    }
+    
+    return { success: errors.length === 0, errors };
+  };
+  
+  const deletePayment = async (id: string): Promise<void> => {
+    const payment = payments.find(p => p.id === id);
+    if (!payment) return;
+    
+    await deletePaymentData(id);
+    
+    // Update customer payment status after deletion
+    updateCustomerPaymentStatus(payment.customerId);
+    
+    toast({
+      title: "Payment Deleted",
+      description: "Payment has been deleted successfully.",
+    });
   };
   
   const getDailyCollections = (date: string): Payment[] => {
-    return getCurrentAreaPayments().filter(payment => payment.date === date);
+    return payments.filter(payment => {
+      const paymentDate = new Date(payment.date).toISOString().split('T')[0];
+      return paymentDate === date;
+    });
   };
   
-  // Area operations
-  const addArea = (areaData: Omit<Area, 'id' | 'createdAt'>): Area => {
-    const newArea: Area = {
-      id: Date.now().toString(),
+  const addArea = async (areaData: Omit<Area, 'id' | 'createdAt' | 'userId'>): Promise<Area> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    const newArea: Omit<Area, 'id'> = {
       ...areaData,
+      userId: user.id,
       createdAt: new Date().toISOString()
     };
     
-    setAreas(prev => [...prev, newArea]);
+    const newAreaId = await pushArea(newArea);
     
-    return newArea;
+    toast({
+      title: "Area Added",
+      description: `${areaData.name} has been added successfully.`,
+    });
+    
+    return { id: newAreaId!, ...newArea };
   };
   
-  const deleteArea = (id: string) => {
-    // Remove area from customers
-    setCustomers(prevCustomers => 
-      prevCustomers.map(customer => 
-        customer.areaId === id 
-          ? { ...customer, areaId: undefined } 
-          : customer
-      )
-    );
+  const deleteArea = async (id: string): Promise<void> => {
+    await deleteAreaData(id);
     
-    // Remove area from payments
-    setPayments(prevPayments => 
-      prevPayments.map(payment => 
-        payment.areaId === id 
-          ? { ...payment, areaId: undefined } 
-          : payment
-      )
-    );
-    
-    // Delete the area
-    setAreas(prevAreas => 
-      prevAreas.filter(area => area.id !== id)
-    );
-    
-    // If current area is deleted, set current area to null
     if (currentAreaId === id) {
       setCurrentAreaId(null);
     }
     
     toast({
       title: "Area Deleted",
-      description: "Area has been deleted. Associated customers and payments are now unassigned.",
+      description: "Area has been deleted successfully.",
     });
   };
-  
+
   const setCurrentArea = (areaId: string | null) => {
     setCurrentAreaId(areaId);
-    
-    if (areaId) {
-      const area = getAreaById(areaId);
-      if (area) {
-        toast({
-          title: "Area Selected",
-          description: `You are now working in ${area.name}.`,
-        });
-      }
-    }
   };
-  
-  // Fixed interest calculation functions using CORRECTED formula
+
+  // Interest earnings calculations
   const calculateDailyInterestEarnings = (date: string): number => {
-    const datePayments = getCurrentAreaPayments().filter(payment => payment.date === date);
+    const dayPayments = getDailyCollections(date);
     let totalInterestEarned = 0;
-
-    console.log(`CORRECTED: Calculating daily interest for ${date}, found ${datePayments.length} payments`);
-
-    datePayments.forEach(payment => {
-      // First try to find current customer data
+    
+    dayPayments.forEach(payment => {
       const customer = customers.find(c => c.id === payment.customerId);
-      
       if (customer) {
-        // Use current customer data with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, customer);
-        totalInterestEarned += earnedInterest;
-      } else if (payment.customerInterestAmount && payment.customerTotalAmountGiven) {
-        // Use preserved historical data for deleted customers with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, {
-          interestAmount: payment.customerInterestAmount,
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalInterestEarned += earnedInterest;
+        totalInterestEarned += calculateCorrectInterestEarning(payment, customer);
+      } else if (payment.isCustomerDeleted) {
+        totalInterestEarned += calculateCorrectInterestEarning(payment, payment);
       }
     });
-
-    console.log(`CORRECTED: Total daily interest earned for ${date}: ₹${totalInterestEarned.toFixed(2)}`);
-    return Math.round(totalInterestEarned * 100) / 100;
+    
+    return totalInterestEarned;
   };
 
   const calculateWeeklyInterestEarnings = (weekStartDate: string): number => {
     const startDate = new Date(weekStartDate);
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 6);
-    endDate.setHours(23, 59, 59, 999); // Include the entire end date
-
-    console.log(`CORRECTED: Calculating weekly interest from ${startDate.toDateString()} to ${endDate.toDateString()}`);
-
-    const weekPayments = getCurrentAreaPayments().filter(payment => {
+    
+    const weekPayments = payments.filter(payment => {
       const paymentDate = new Date(payment.date);
       return paymentDate >= startDate && paymentDate <= endDate;
     });
-
+    
     let totalInterestEarned = 0;
-
-    console.log(`Found ${weekPayments.length} payments in week range`);
-
+    
     weekPayments.forEach(payment => {
-      // First try to find current customer data
       const customer = customers.find(c => c.id === payment.customerId);
-      
       if (customer) {
-        // Use current customer data with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, customer);
-        totalInterestEarned += earnedInterest;
-      } else if (payment.customerInterestAmount && payment.customerTotalAmountGiven) {
-        // Use preserved historical data for deleted customers with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, {
-          interestAmount: payment.customerInterestAmount,
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalInterestEarned += earnedInterest;
+        totalInterestEarned += calculateCorrectInterestEarning(payment, customer);
+      } else if (payment.isCustomerDeleted) {
+        totalInterestEarned += calculateCorrectInterestEarning(payment, payment);
       }
     });
-
-    console.log(`CORRECTED: Total weekly interest earned: ₹${totalInterestEarned.toFixed(2)}`);
-    return Math.round(totalInterestEarned * 100) / 100;
+    
+    return totalInterestEarned;
   };
 
   const calculateMonthlyInterestEarnings = (month: string, year: string): number => {
-    const targetMonth = parseInt(month) - 1; // JavaScript months are 0-based
-    const targetYear = parseInt(year);
-    
-    console.log(`CORRECTED: Calculating monthly interest for ${month}/${year}`);
-
-    const monthPayments = getCurrentAreaPayments().filter(payment => {
+    const monthPayments = payments.filter(payment => {
       const paymentDate = new Date(payment.date);
-      return paymentDate.getMonth() === targetMonth && paymentDate.getFullYear() === targetYear;
+      const paymentMonth = (paymentDate.getMonth() + 1).toString().padStart(2, '0');
+      const paymentYear = paymentDate.getFullYear().toString();
+      return paymentMonth === month && paymentYear === year;
     });
-
+    
     let totalInterestEarned = 0;
-
-    console.log(`Found ${monthPayments.length} payments in month ${month}/${year}`);
-
+    
     monthPayments.forEach(payment => {
-      // First try to find current customer data
       const customer = customers.find(c => c.id === payment.customerId);
-      
       if (customer) {
-        // Use current customer data with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, customer);
-        totalInterestEarned += earnedInterest;
-      } else if (payment.customerInterestAmount && payment.customerTotalAmountGiven) {
-        // Use preserved historical data for deleted customers with correct calculation
-        const earnedInterest = calculateCorrectInterestEarning(payment, {
-          interestAmount: payment.customerInterestAmount,
-          totalAmountGiven: payment.customerTotalAmountGiven
-        });
-        totalInterestEarned += earnedInterest;
+        totalInterestEarned += calculateCorrectInterestEarning(payment, customer);
+      } else if (payment.isCustomerDeleted) {
+        totalInterestEarned += calculateCorrectInterestEarning(payment, payment);
       }
     });
-
-    console.log(`CORRECTED: Total monthly interest earned for ${month}/${year}: ₹${totalInterestEarned.toFixed(2)}`);
-    return Math.round(totalInterestEarned * 100) / 100;
+    
+    return totalInterestEarned;
   };
 
   const getHistoricalPayments = (startDate: string, endDate: string): Payment[] => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     
-    return getCurrentAreaPayments().filter(payment => {
+    return payments.filter(payment => {
       const paymentDate = new Date(payment.date);
       return paymentDate >= start && paymentDate <= end;
     });
   };
-  
-  // Effect to initialize the app and migrate data
-  useEffect(() => {
-    // Data migration: ensure all payments have customerTotalAmountGiven for correct calculations
-    setPayments(prev => prev.map(payment => {
-      if (!payment.customerTotalAmountGiven) {
-        const customer = customers.find(c => c.id === payment.customerId);
-        if (customer) {
-          return {
-            ...payment,
-            customerTotalAmountGiven: customer.totalAmountGiven,
-            customerInterestAmount: customer.interestAmount,
-            customerTotalAmountToBePaid: customer.totalAmountToBePaid,
-            customerPaymentCategory: customer.paymentCategory,
-            customerPenaltyAmount: customer.penaltyAmount || 0,
-            isCustomerDeleted: false
-          };
-        }
-      }
-      return payment;
-    }));
 
-    // Calculate penalties on app load
-    calculateAllPenalties();
+  const addDailyInterestEarning = async (date: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
     
-    // Any initialization logic can go here
-    recalculateAllCustomerPayments();
+    const existingEarning = dailyInterestEarnings.find(earning => 
+      earning.date === date && earning.areaId === currentAreaId
+    );
     
-    // Update customers with new fields if they don't have them
-    setCustomers(prev => prev.map(customer => {
-      let updatedCustomer = { ...customer };
-      
-      // Add default payment category if missing
-      if (!customer.paymentCategory) {
-        updatedCustomer.paymentCategory = 'daily';
+    if (existingEarning) {
+      toast({
+        title: "Daily Earning Exists",
+        description: "A daily earning record already exists for this date.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const totalInterestEarned = calculateDailyInterestEarnings(date);
+    const dayPayments = getDailyCollections(date);
+    
+    let totalPrincipleEarned = 0;
+    dayPayments.forEach(payment => {
+      const customer = customers.find(c => c.id === payment.customerId);
+      if (customer) {
+        totalPrincipleEarned += calculatePrincipleEarning(payment, customer);
+      } else if (payment.isCustomerDeleted) {
+        totalPrincipleEarned += calculatePrincipleEarning(payment, payment);
       }
-      
-      // Initialize penalty fields if missing
-      if (customer.penaltyAmount === undefined) {
-        updatedCustomer.penaltyAmount = 0;
-      }
-      
-      if (!customer.deadlineDate) {
-        const periods = customer.paymentCategory === 'weekly' ? 
-          (customer.numberOfWeeks || Math.ceil(customer.numberOfDays / 7)) :
-          customer.paymentCategory === 'monthly' ? 
-          (customer.numberOfMonths || Math.ceil(customer.numberOfDays / 30)) :
-          customer.numberOfDays;
-          
-        updatedCustomer.deadlineDate = calculateDeadlineDate(
-          customer.issuedDate, 
-          periods, 
-          customer.paymentCategory
-        );
-      }
-      
-      // Migrate old customers with rateOfInterest to new interestAmount system
-      if ('rateOfInterest' in customer && !('interestAmount' in customer)) {
-        const oldCustomer = customer as any;
-        const oldRateOfInterest = oldCustomer.rateOfInterest || 0;
-        const dailyRate = oldRateOfInterest / 100;
-        const calculatedInterestAmount = updatedCustomer.totalAmountGiven * dailyRate * updatedCustomer.numberOfDays;
-        
-        updatedCustomer.interestAmount = calculatedInterestAmount;
-        updatedCustomer.totalAmountToBePaid = updatedCustomer.totalAmountGiven + calculatedInterestAmount;
-        updatedCustomer.dailyAmount = updatedCustomer.totalAmountToBePaid / updatedCustomer.numberOfDays;
-        updatedCustomer.interestPercentage = oldRateOfInterest * updatedCustomer.numberOfDays;
-        
-        // Calculate installment amount based on payment category
-        const periods = updatedCustomer.paymentCategory === 'weekly' ? 
-          Math.ceil(updatedCustomer.numberOfDays / 7) :
-          updatedCustomer.paymentCategory === 'monthly' ? 
-          Math.ceil(updatedCustomer.numberOfDays / 30) :
-          updatedCustomer.numberOfDays;
-        
-        updatedCustomer.installmentAmount = updatedCustomer.totalAmountToBePaid / periods;
-        
-        // Remove the old property
-        delete oldCustomer.rateOfInterest;
-      } else if (!customer.dailyAmount || !customer.interestPercentage) {
-        // Calculate missing fields for existing customers
-        updatedCustomer.dailyAmount = customer.totalAmountToBePaid / customer.numberOfDays;
-        updatedCustomer.interestPercentage = customer.totalAmountGiven > 0 ? 
-          ((customer.totalAmountToBePaid - customer.totalAmountGiven) / customer.totalAmountGiven) * 100 : 0;
-          
-        // Calculate installment amount
-        const periods = customer.paymentCategory === 'weekly' ? 
-          (customer.numberOfWeeks || Math.ceil(customer.numberOfDays / 7)) :
-          customer.paymentCategory === 'monthly' ? 
-          (customer.numberOfMonths || Math.ceil(customer.numberOfDays / 30)) :
-          customer.numberOfDays;
-        
-        updatedCustomer.installmentAmount = customer.totalAmountToBePaid / periods;
-      }
-      
-      return updatedCustomer;
-    }));
-
-    // Update existing payments to include historical customer data if missing
-    setPayments(prev => prev.map(payment => {
-      if (!payment.customerInterestAmount || !payment.customerTotalAmountToBePaid) {
-        const customer = customers.find(c => c.id === payment.customerId);
-        if (customer) {
-          return {
-            ...payment,
-            customerInterestAmount: customer.interestAmount,
-            customerTotalAmountToBePaid: customer.totalAmountToBePaid,
-            customerPaymentCategory: customer.paymentCategory,
-            customerPenaltyAmount: customer.penaltyAmount || 0,
-            isCustomerDeleted: false
-          };
-        }
-      }
-      return payment;
-    }));
-  }, []);
-  
-  const contextValue: FinanceContextType = {
-    customers,
-    payments,
-    areas,
-    dailyInterestEarnings,
-    currentAreaId,
-    addCustomer,
-    updateCustomer,
-    deleteCustomer,
-    addPayment,
-    addPaymentBatch,
-    deletePayment,
-    getCustomerPayments,
-    getCustomerBySerialNumber,
-    updateCustomerPaymentStatus,
-    recalculateAllCustomerPayments,
-    getDailyCollections,
-    getCurrentAreaCustomers,
-    getCurrentAreaPayments,
-    addArea,
-    deleteArea,
-    setCurrentArea,
-    getAreaById,
-    getAreaCustomers,
-    getAreaPayments,
-    calculatePenalty,
-    calculateAllPenalties,
-    calculateTotalEarnings,
-    calculateDailyInterestEarnings,
-    calculateWeeklyInterestEarnings,
-    calculateMonthlyInterestEarnings,
-    getHistoricalPayments,
-    getPendingCustomers,
-    getPaidCustomers,
-    getOverdueCustomers,
-    addDailyInterestEarning,
-    deleteDailyInterestEarning,
-    getCurrentAreaDailyEarnings,
+    });
+    
+    const newEarning: Omit<DailyInterestEarning, 'id'> = {
+      date,
+      totalInterestEarned,
+      totalPrincipleEarned,
+      areaId: currentAreaId || undefined,
+      userId: user.id,
+      createdAt: new Date().toISOString()
+    };
+    
+    await pushDailyEarning(newEarning);
+    
+    toast({
+      title: "Daily Earning Added",
+      description: `Daily earning for ${date} has been recorded.`,
+    });
   };
-  
+
+  const deleteDailyInterestEarning = async (id: string): Promise<void> => {
+    await deleteDailyEarningData(id);
+    
+    toast({
+      title: "Daily Earning Deleted",
+      description: "Daily earning record has been deleted.",
+    });
+  };
+
+  const getCurrentAreaDailyEarnings = (): DailyInterestEarning[] => {
+    if (!currentAreaId) return dailyInterestEarnings;
+    return dailyInterestEarnings.filter(earning => earning.areaId === currentAreaId);
+  };
+
   return (
-    <FinanceContext.Provider value={contextValue}>
+    <FinanceContext.Provider value={{
+      customers,
+      payments,
+      areas,
+      dailyInterestEarnings,
+      currentAreaId,
+      isLoading,
+      isConnected,
+      addCustomer,
+      updateCustomer,
+      deleteCustomer,
+      addPayment,
+      addPaymentBatch,
+      deletePayment,
+      getCustomerPayments,
+      getCustomerBySerialNumber,
+      updateCustomerPaymentStatus,
+      recalculateAllCustomerPayments,
+      getDailyCollections,
+      getCurrentAreaCustomers,
+      getCurrentAreaPayments,
+      addArea,
+      deleteArea,
+      setCurrentArea,
+      getAreaById,
+      getAreaCustomers,
+      getAreaPayments,
+      calculatePenalty,
+      calculateAllPenalties,
+      calculateTotalEarnings,
+      calculateDailyInterestEarnings,
+      calculateWeeklyInterestEarnings,
+      calculateMonthlyInterestEarnings,
+      getHistoricalPayments,
+      getPendingCustomers,
+      getPaidCustomers,
+      getOverdueCustomers,
+      addDailyInterestEarning,
+      deleteDailyInterestEarning,
+      getCurrentAreaDailyEarnings
+    }}>
       {children}
     </FinanceContext.Provider>
   );
 };
-
-export default FinanceProvider;

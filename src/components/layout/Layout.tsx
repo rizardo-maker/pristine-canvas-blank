@@ -2,11 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { cn } from '@/lib/utils';
 import UserButton from '../auth/UserButton';
-import { useAuth } from '@/context/LocalAuthContext';
-import { displaySyncStatus, getDeviceId } from '@/utils/indexedDB';
-import { Database, RefreshCw, Info, FileUp, FileDown, AlertTriangle, Mic } from 'lucide-react';
+import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
+import { Database, RefreshCw, Info, Mic, Wifi, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { exportData, handleImportClick } from '@/utils/dataExport';
 import { useToast } from '@/hooks/use-toast';
 import { useFinance } from '@/context/FinanceContext';
 import { 
@@ -32,16 +30,10 @@ interface LayoutProps {
 }
 
 const LayoutContent: React.FC<LayoutProps> = ({ children, className }) => {
-  const { user } = useAuth();
+  const { user } = useFirebaseAuth();
   const { toast } = useToast();
-  const finance = useFinance();
+  const { isConnected, isLoading } = useFinance();
   const [syncStatus, setSyncStatus] = useState('');
-  const [deviceId, setDeviceId] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [importProgress, setImportProgress] = useState<string | null>(null);
-  const [lastImportDate, setLastImportDate] = useState<string | null>(null);
   const { isListening, toggleListening, setHelpOpen } = useSharedVoiceNavigation();
 
   useVoiceAction(
@@ -54,117 +46,30 @@ const LayoutContent: React.FC<LayoutProps> = ({ children, className }) => {
   useEffect(() => {
     if (user) {
       updateSyncStatus();
-      setDeviceId(getDeviceId().substring(0, 10) + '...');
       
-      // Check for last import date
-      const lastImport = localStorage.getItem('last_import_date');
-      if (lastImport) {
-        const date = new Date(lastImport);
-        setLastImportDate(
-          date.toLocaleDateString(undefined, { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        );
-      }
-      
-      // Update sync status every minute
-      const interval = setInterval(updateSyncStatus, 60000);
+      // Update sync status periodically
+      const interval = setInterval(updateSyncStatus, 30000);
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, isConnected]);
 
-  const updateSyncStatus = async () => {
+  const updateSyncStatus = () => {
     if (user) {
-      try {
-        const status = await displaySyncStatus(user.id);
-        setSyncStatus(status);
-      } catch (error) {
-        console.error("Error updating sync status:", error);
-        setSyncStatus("Status unknown");
+      if (isLoading) {
+        setSyncStatus("Syncing...");
+      } else if (isConnected) {
+        setSyncStatus("Real-time sync active");
+      } else {
+        setSyncStatus("Offline - will sync when connected");
       }
     }
   };
 
-  const handleRefreshSync = async () => {
-    if (!user || isSyncing) return;
-    
-    setIsSyncing(true);
-    try {
-      await updateSyncStatus();
-      toast({
-        title: "Sync status updated",
-        description: "Latest sync information retrieved.",
-      });
-    } catch (error) {
-      console.error("Error refreshing sync:", error);
-      toast({
-        title: "Sync refresh failed",
-        description: "Could not update sync status.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-  
-  const handleExportClick = async () => {
-    if (!user || isExporting) return;
-    
-    setIsExporting(true);
-    try {
-      const result = await exportData(user.id);
-      if (!result) {
-        toast({
-          title: "Export issue",
-          description: "There may have been an issue with the export.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      toast({
-        title: "Export failed",
-        description: "Could not export data. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-  
-  const handleImport = () => {
-    if (!user) return;
-    
-    // Show confirmation dialog first
-    setShowImportDialog(true);
-  };
-  
-  const confirmImport = () => {
-    setShowImportDialog(false);
-    
-    if (!user) return;
-    
-    setImportProgress("Preparing to import...");
-    
-    handleImportClick(user.id, () => {
-      // Update the last import date
-      setLastImportDate(
-        new Date().toLocaleDateString(undefined, { 
-          year: 'numeric', 
-          month: 'short', 
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      );
-      
-      setImportProgress(null);
-      // Force reload to refresh context data
-      window.location.reload();
+  const handleRefreshSync = () => {
+    updateSyncStatus();
+    toast({
+      title: "Sync status updated",
+      description: "Connection status refreshed.",
     });
   };
 
@@ -175,7 +80,11 @@ const LayoutContent: React.FC<LayoutProps> = ({ children, className }) => {
         {user && (
           <div className="flex items-center text-xs text-muted-foreground gap-3">
             <div className="flex items-center">
-              <Database className="h-3 w-3 mr-1" />
+              {isConnected ? (
+                <Wifi className="h-3 w-3 mr-1 text-green-500" />
+              ) : (
+                <WifiOff className="h-3 w-3 mr-1 text-red-500" />
+              )}
               <span>{syncStatus}</span>
               <TooltipProvider>
                 <Tooltip>
@@ -185,63 +94,19 @@ const LayoutContent: React.FC<LayoutProps> = ({ children, className }) => {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Device ID: {deviceId}</p>
-                    <p className="text-xs mt-1">Data is stored locally on this device.</p>
-                    <p className="text-xs">Use import/export to transfer data between devices.</p>
-                    {lastImportDate && (
-                      <p className="text-xs mt-1">Last import: {lastImportDate}</p>
-                    )}
+                    <p>Firebase Real-time Database</p>
+                    <p className="text-xs mt-1">Data syncs instantly across all devices</p>
+                    <p className="text-xs">Offline changes sync when reconnected</p>
+                    <p className="text-xs mt-1">Status: {isConnected ? 'Connected' : 'Offline'}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <button 
                 onClick={handleRefreshSync}
                 className="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                disabled={isSyncing}
               >
-                <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
-            </div>
-            
-            <div className="flex items-center gap-2 border-l pl-3 border-muted">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={handleExportClick}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      disabled={isExporting}
-                    >
-                      <FileDown className={`h-3.5 w-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div>
-                      <p>Export all data to file</p>
-                      <p className="text-xs mt-1">Includes customers, payments, and areas</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={handleImport}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <FileUp className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div>
-                      <p>Import data from file</p>
-                      <p className="text-xs mt-1">Merge with existing data</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </div>
           </div>
         )}
@@ -284,44 +149,6 @@ const LayoutContent: React.FC<LayoutProps> = ({ children, className }) => {
         </TooltipProvider>
       )}
 
-      {/* Import Confirmation Dialog */}
-      <AlertDialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Import Data
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Importing data will merge it with your existing data. This action cannot be undone.
-              <br /><br />
-              Only import files exported from this application. The application will reload after import.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmImport}>Continue Import</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Import Progress Dialog */}
-      <Dialog open={!!importProgress} onOpenChange={(open) => !open && setImportProgress(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Importing Data</DialogTitle>
-            <DialogDescription>
-              Please wait while we import your data...
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center justify-center py-6">
-            <div className="flex flex-col items-center gap-4">
-              <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-              <p>{importProgress}</p>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

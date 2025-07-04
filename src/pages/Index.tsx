@@ -1,22 +1,16 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/LocalAuthContext';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { Button } from '@/components/ui/button';
 import { LogIn, UserPlus } from 'lucide-react';
 
 const Index = () => {
   const navigate = useNavigate();
-  const { user: localUser, isLoading: localLoading, isFirstTime } = useAuth();
-  const { user: firebaseUser, isLoading: firebaseLoading } = useFirebaseAuth();
-  
-  const isLoading = localLoading || firebaseLoading;
+  const { user: firebaseUser, isLoading } = useFirebaseAuth();
   
   useEffect(() => {
     console.log("Index - Firebase user:", firebaseUser);
-    console.log("Index - Local user:", localUser);
     console.log("Index - Is loading:", isLoading);
-    console.log("Index - Is first time:", isFirstTime);
 
     if (isLoading) return;
     
@@ -27,15 +21,8 @@ const Index = () => {
       return;
     }
     
-    // If local user is authenticated and setup is complete, route to app-entry
-    if (localUser && !isFirstTime) {
-      console.log("Local user authenticated, routing to app-entry");
-      navigate('/app-entry');
-      return;
-    }
-    
     // Otherwise, stay on landing page to let user choose auth method
-  }, [localUser, firebaseUser, isLoading, isFirstTime, navigate]);
+  }, [firebaseUser, isLoading, navigate]);
   
   if (isLoading) {
     return (
@@ -59,14 +46,14 @@ const Index = () => {
         
         <div className="space-y-4">
           <div className="text-lg font-semibold text-muted-foreground mb-4">
-            Choose your authentication method:
+            Welcome to Line Manager App
           </div>
           
           {/* Firebase Authentication Options */}
           <div className="bg-card p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4">Cloud Sync (Recommended)</h3>
+            <h3 className="text-lg font-semibold mb-4">Cloud Sync with Real-time Updates</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Access your data from any device with automatic cloud synchronization
+              Access your data from any device with automatic cloud synchronization and real-time updates
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button 
@@ -83,21 +70,6 @@ const Index = () => {
                 <UserPlus size={20} /> Sign Up
               </Button>
             </div>
-          </div>
-          
-          {/* Local Authentication Option */}
-          <div className="bg-card p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4">Local Access</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Use the app locally on this device only (data won't sync across devices)
-            </p>
-            <Button 
-              onClick={() => navigate('/auth')} 
-              variant="secondary"
-              className="py-3 px-6 text-base flex items-center gap-2"
-            >
-              <LogIn size={20} /> {isFirstTime ? 'Set Up Local Account' : 'Access Locally'}
-            </Button>
           </div>
         </div>
       </div>

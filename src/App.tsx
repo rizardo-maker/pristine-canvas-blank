@@ -5,9 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { FinanceProvider } from "./context/FinanceContext";
-import { AuthProvider } from "./context/LocalAuthContext";
 import { FirebaseAuthProvider } from "./context/FirebaseAuthContext";
-import { FirebaseDataProvider } from "./context/FirebaseDataContext";
 import { useEffect } from "react";
 import { initializeMobileApp } from "./utils/mobileUtils";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
@@ -25,25 +23,23 @@ import NotFound from "./pages/NotFound";
 import CustomerDetail from "./pages/CustomerDetail";
 import PostingDetails from "./pages/PostingDetails";
 import Areas from "./pages/Areas";
-import LocalAuth from "./pages/auth/LocalAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
-import RequireAuth from "./components/auth/RequireAuth";
+import RequireFirebaseAuth from "./components/auth/RequireFirebaseAuth";
 import Index from "./pages/Index";
 import { VoiceNavigationProvider } from "./context/VoiceNavigationContext";
 import { voiceNavRoutes } from "./config/voice-nav-routes";
-import AppEntry from "./pages/AppEntry";
 import AreaReports from "./pages/AreaReports";
 
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return (
-    <RequireAuth>
+    <RequireFirebaseAuth>
       <VoiceNavigationProvider routes={voiceNavRoutes}>
         <Layout>{children}</Layout>
       </VoiceNavigationProvider>
-    </RequireAuth>
+    </RequireFirebaseAuth>
   );
 };
 
@@ -56,45 +52,37 @@ const App = () => {
     <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
         <FirebaseAuthProvider>
-          <FirebaseDataProvider>
-            <AuthProvider>
-              <FinanceProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Sonner />
-                  <BrowserRouter>
-                    <Routes>
-                      {/* Public routes */}
-                      <Route path="/" element={<Index />} />
-                      <Route path="/auth" element={<LocalAuth />} />
-                      <Route path="/sign-in" element={<SignIn />} />
-                      <Route path="/sign-up" element={<SignUp />} />
-                      
-                      {/* Entry point for authenticated users */}
-                      <Route path="/app-entry" element={<ProtectedRoute><AppEntry /></ProtectedRoute>} />
+          <FinanceProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <Routes>
+                  {/* Public routes */}
+                  <Route path="/" element={<Index />} />
+                  <Route path="/sign-in" element={<SignIn />} />
+                  <Route path="/sign-up" element={<SignUp />} />
 
-                      {/* Protected routes */}
-                      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                      <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-                      <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
-                      <Route path="/collections/daily" element={<ProtectedRoute><DailyCollections /></ProtectedRoute>} />
-                      <Route path="/collections/weekly" element={<ProtectedRoute><WeeklyCollections /></ProtectedRoute>} />
-                      <Route path="/collections/monthly" element={<ProtectedRoute><MonthlyCollections /></ProtectedRoute>} />
-                      <Route path="/posting" element={<ProtectedRoute><Posting /></ProtectedRoute>} />
-                      <Route path="/posting/:date" element={<ProtectedRoute><PostingDetails /></ProtectedRoute>} />
-                      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-                      <Route path="/areas/:areaId/reports" element={<ProtectedRoute><AreaReports /></ProtectedRoute>} />
-                      <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
-                      <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
-                      
-                      {/* Not Found Route */}
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </BrowserRouter>
-                </TooltipProvider>
-              </FinanceProvider>
-            </AuthProvider>
-          </FirebaseDataProvider>
+                  {/* Protected routes */}
+                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+                  <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
+                  <Route path="/collections/daily" element={<ProtectedRoute><DailyCollections /></ProtectedRoute>} />
+                  <Route path="/collections/weekly" element={<ProtectedRoute><WeeklyCollections /></ProtectedRoute>} />
+                  <Route path="/collections/monthly" element={<ProtectedRoute><MonthlyCollections /></ProtectedRoute>} />
+                  <Route path="/posting" element={<ProtectedRoute><Posting /></ProtectedRoute>} />
+                  <Route path="/posting/:date" element={<ProtectedRoute><PostingDetails /></ProtectedRoute>} />
+                  <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+                  <Route path="/areas/:areaId/reports" element={<ProtectedRoute><AreaReports /></ProtectedRoute>} />
+                  <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
+                  <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
+                  
+                  {/* Not Found Route */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </FinanceProvider>
         </FirebaseAuthProvider>
       </QueryClientProvider>
     </NextThemesProvider>
