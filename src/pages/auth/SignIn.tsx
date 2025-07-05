@@ -109,12 +109,10 @@ const SignIn = () => {
         <CardFooter className="flex justify-center">
           <Button 
             variant="ghost" 
-            asChild
+            onClick={() => navigate("/")}
             className="text-sm flex items-center gap-1"
           >
-            <Link to="/sign-up">
-              <ArrowLeft size={16} /> Don't have an account? Sign up
-            </Link>
+            <ArrowLeft size={16} /> Back to Home
           </Button>
         </CardFooter>
       </Card>

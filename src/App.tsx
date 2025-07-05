@@ -24,7 +24,7 @@ import CustomerDetail from "./pages/CustomerDetail";
 import PostingDetails from "./pages/PostingDetails";
 import Areas from "./pages/Areas";
 import SignIn from "./pages/auth/SignIn";
-import SignUp from "./pages/auth/SignUp";
+
 import RequireFirebaseAuth from "./components/auth/RequireFirebaseAuth";
 import Index from "./pages/Index";
 import { VoiceNavigationProvider } from "./context/VoiceNavigationContext";
@@ -61,7 +61,6 @@ const App = () => {
                   {/* Public routes */}
                   <Route path="/" element={<Index />} />
                   <Route path="/sign-in" element={<SignIn />} />
-                  <Route path="/sign-up" element={<SignUp />} />
 
                   {/* Protected routes */}
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

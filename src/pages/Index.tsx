@@ -21,7 +21,9 @@ const Index = () => {
       return;
     }
     
-    // Otherwise, stay on landing page to let user choose auth method
+    // If not authenticated, redirect to sign-in
+    console.log("User not authenticated, redirecting to sign-in");
+    navigate('/sign-in');
   }, [firebaseUser, isLoading, navigate]);
   
   if (isLoading) {
