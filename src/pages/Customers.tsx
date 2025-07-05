@@ -353,11 +353,18 @@ const Customers = () => {
     }
   };
   
-  // Filter customers based on search term
-  const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.serialNumber.includes(searchTerm)
-  );
+  // Filter and sort customers based on search term and serial number
+  const filteredCustomers = customers
+    .filter(customer => 
+      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.serialNumber.includes(searchTerm)
+    )
+    .sort((a, b) => {
+      // Sort by serial number in ascending order (1, 2, 3, 4, ...)
+      const serialA = parseInt(a.serialNumber) || 0;
+      const serialB = parseInt(b.serialNumber) || 0;
+      return serialA - serialB;
+    });
 
   // Check if customer is overdue
   const isOverdue = (customer: Customer) => {

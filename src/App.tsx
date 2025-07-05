@@ -30,6 +30,7 @@ import Index from "./pages/Index";
 import { VoiceNavigationProvider } from "./context/VoiceNavigationContext";
 import { voiceNavRoutes } from "./config/voice-nav-routes";
 import AreaReports from "./pages/AreaReports";
+import AreaCost from "./pages/AreaCost";
 
 const queryClient = new QueryClient();
 
@@ -73,6 +74,7 @@ const App = () => {
                   <Route path="/posting/:date" element={<ProtectedRoute><PostingDetails /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
                   <Route path="/areas/:areaId/reports" element={<ProtectedRoute><AreaReports /></ProtectedRoute>} />
+                  <Route path="/areas/:areaId/cost" element={<ProtectedRoute><AreaCost /></ProtectedRoute>} />
                   <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
                   <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
                   

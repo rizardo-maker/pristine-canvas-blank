@@ -42,7 +42,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { Calendar, MapPin, Users, ArrowRight, Plus, Trash2, Edit } from 'lucide-react';
+import { Calendar, MapPin, Users, ArrowRight, Plus, Trash2, Edit, FileText, DollarSign } from 'lucide-react';
 
 const Areas = () => {
   const { areas, addArea, deleteArea, setCurrentArea, getAreaCustomers, getAreaPayments } = useFinance();
@@ -215,45 +215,68 @@ const Areas = () => {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="justify-between border-t p-4">
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        className="text-destructive border-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Delete
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Area</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Are you sure you want to delete the area "{area.name}"? 
-                          This will not delete customers or payments, but they will no longer be associated with this area.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction 
-                          onClick={() => handleDeleteArea(area.id)}
-                          className="bg-red-600 hover:bg-red-700"
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                <CardFooter className="flex flex-col gap-3 border-t p-4">
+                  <div className="flex gap-2 w-full">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/areas/${area.id}/reports`)}
+                      className="flex-1"
+                    >
+                      <FileText className="h-4 w-4 mr-1" />
+                      Reports
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/areas/${area.id}/cost`)}
+                      className="flex-1"
+                    >
+                      <DollarSign className="h-4 w-4 mr-1" />
+                      Cost
+                    </Button>
+                  </div>
                   
-                  <Button
-                    onClick={() => handleSelectArea(area)}
-                    className="bg-finance-blue hover:bg-finance-blue/90"
-                  >
-                    Select
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                  <div className="flex justify-between w-full">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="text-destructive border-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Area</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete the area "{area.name}"? 
+                            This will not delete customers or payments, but they will no longer be associated with this area.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => handleDeleteArea(area.id)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    
+                    <Button
+                      onClick={() => handleSelectArea(area)}
+                      className="bg-finance-blue hover:bg-finance-blue/90"
+                    >
+                      Select
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             );
