@@ -28,7 +28,8 @@ const Posting = () => {
     getCustomerBySerialNumber, 
     recalculateAllCustomerPayments, 
     currentAreaId, 
-    getAreaById 
+    getAreaById,
+    userId
   } = useFinance();
   
   const navigate = useNavigate();
@@ -347,7 +348,8 @@ const Posting = () => {
       const batchResult = await batchProcessor.processBatch(entries, {
         date,
         collectionType,
-        areaId: currentAreaId || undefined
+        areaId: currentAreaId || undefined,
+        userId: userId || ''
       });
       
       console.log('Batch processing result:', batchResult);

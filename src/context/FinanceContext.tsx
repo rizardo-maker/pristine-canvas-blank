@@ -79,6 +79,7 @@ interface FinanceContextType {
   currentAreaId: string | null;
   isLoading: boolean;
   isConnected: boolean;
+  userId: string | null;
   addCustomer: (customerData: Omit<Customer, 'id' | 'totalAmountToBePaid' | 'totalPaid' | 'isFullyPaid' | 'createdAt' | 'deadlineDate' | 'dailyAmount' | 'interestPercentage' | 'installmentAmount' | 'penaltyAmount' | 'lastPenaltyCalculated' | 'userId'>) => Promise<Customer>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
@@ -833,6 +834,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       currentAreaId,
       isLoading,
       isConnected,
+      userId: user?.id || null,
       addCustomer,
       updateCustomer,
       deleteCustomer,

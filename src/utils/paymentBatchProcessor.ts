@@ -15,6 +15,7 @@ export interface BatchPaymentData {
   date: string;
   collectionType: 'daily' | 'weekly' | 'monthly';
   areaId?: string;
+  userId: string;
 }
 
 export interface BatchProcessResult {
@@ -86,7 +87,8 @@ export class PaymentBatchProcessor {
           date: batchData.date,
           collectionType: batchData.collectionType,
           agentName: entry.agentName || 'Not specified',
-          areaId: batchData.areaId || this.currentAreaId || undefined
+          areaId: batchData.areaId || this.currentAreaId || undefined,
+          userId: batchData.userId
         };
 
         result.successfulPayments.push(payment);

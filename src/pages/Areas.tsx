@@ -52,14 +52,14 @@ const Areas = () => {
   const [newAreaDescription, setNewAreaDescription] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 
-  const handleAddArea = () => {
+  const handleAddArea = async () => {
     if (!newAreaName.trim()) {
       toast.error('Please enter an area name');
       return;
     }
 
     // Add area and store the returned area object
-    const newArea = addArea({
+    const newArea = await addArea({
       name: newAreaName.trim(),
       description: newAreaDescription.trim() || undefined
     });
