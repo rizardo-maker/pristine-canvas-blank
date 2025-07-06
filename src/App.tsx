@@ -24,6 +24,7 @@ import CustomerDetail from "./pages/CustomerDetail";
 import PostingDetails from "./pages/PostingDetails";
 import Areas from "./pages/Areas";
 import SignIn from "./pages/auth/SignIn";
+import Calculator from "./pages/Calculator";
 
 import RequireFirebaseAuth from "./components/auth/RequireFirebaseAuth";
 import Index from "./pages/Index";
@@ -77,6 +78,7 @@ const App = () => {
                   <Route path="/areas/:areaId/cost" element={<ProtectedRoute><AreaCost /></ProtectedRoute>} />
                   <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
                   <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
+                  <Route path="/calculator" element={<ProtectedRoute><Calculator /></ProtectedRoute>} />
                   
                   {/* Not Found Route */}
                   <Route path="*" element={<NotFound />} />

@@ -13,7 +13,8 @@ import {
   Map,
   Building,
   ArrowLeft,
-  FileText
+  FileText,
+  Calculator
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useFinance } from '@/context/FinanceContext';
@@ -73,6 +74,11 @@ const getBaseMenuItems = (currentAreaId?: string): MenuItem[] => [
     name: 'Reports',
     path: currentAreaId ? `/areas/${currentAreaId}/reports` : '/reports',
     icon: <FileText className="w-5 h-5" />,
+  },
+  {
+    name: 'Calculator',
+    path: '/calculator',
+    icon: <Calculator className="w-5 h-5" />,
   },
 ];
 

@@ -126,7 +126,7 @@
 
 @layer components {
   .glass-card {
-    @apply bg-white bg-opacity-60 backdrop-filter backdrop-blur-lg border border-white border-opacity-20 shadow-soft;
+    @apply bg-card/60 backdrop-filter backdrop-blur-lg border border-border/20 shadow-soft;
   }
   
   .animated-card {
