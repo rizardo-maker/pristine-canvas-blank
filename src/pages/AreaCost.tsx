@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useFinance } from '@/context/FinanceContext';
+import { useFinance, Payment } from '@/context/FinanceContext';
 import PageTitle from '@/components/ui/PageTitle';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,8 +56,8 @@ interface CostData {
   month: string; // Format: YYYY-MM
   agents: Agent[];
   expenses: Expense[];
-  totalCollections: number;
-  previousMonthCollections: number;
+  totalEarnings: number;
+  previousMonthEarnings: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -121,33 +121,58 @@ const AreaCost = () => {
       month: selectedMonth,
       agents: [],
       expenses: [],
-      totalCollections: 0,
-      previousMonthCollections: 0,
+      totalEarnings: 0,
+      previousMonthEarnings: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
   });
 
-  // Calculate current month collections
-  const currentMonthCollections = useMemo(() => {
+  // Calculate interest earnings using the correct interest earning calculation
+  const calculateInterestEarnings = (monthPayments: Payment[]) => {
+    let totalEarnings = 0;
+    
+    monthPayments.forEach(payment => {
+      const customer = customers.find(c => c.id === payment.customerId);
+      if (!customer) return;
+      
+      const principal = customer.totalAmountGiven || 0;
+      const totalInterest = customer.interestAmount || 0;
+      
+      if (principal <= 0 || totalInterest <= 0) return;
+      
+      // Calculate what portion of PRINCIPAL this payment represents
+      const principalRatio = Math.min(payment.amount / principal, 1);
+      const earnedInterest = principalRatio * totalInterest;
+      
+      totalEarnings += Math.round(earnedInterest * 100) / 100;
+    });
+    
+    return totalEarnings;
+  };
+
+  // Calculate current month interest earnings
+  const currentMonthEarnings = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
-    return areaPayments.filter(payment => {
+    const monthPayments = areaPayments.filter(payment => {
       const paymentDate = new Date(payment.date);
       return paymentDate.getFullYear() === year && paymentDate.getMonth() + 1 === month;
-    }).reduce((sum, payment) => sum + payment.amount, 0);
-  }, [areaPayments, selectedMonth]);
+    });
+    return calculateInterestEarnings(monthPayments);
+  }, [areaPayments, selectedMonth, customers]);
 
-  // Calculate previous month collections
-  const previousMonthCollections = useMemo(() => {
+  // Calculate previous month interest earnings
+  const previousMonthEarnings = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
     
-    return areaPayments.filter(payment => {
+    const prevMonthPayments = areaPayments.filter(payment => {
       const paymentDate = new Date(payment.date);
       return paymentDate.getFullYear() === prevYear && paymentDate.getMonth() + 1 === prevMonth;
-    }).reduce((sum, payment) => sum + payment.amount, 0);
-  }, [areaPayments, selectedMonth]);
+    });
+    return calculateInterestEarnings(prevMonthPayments);
+  }, [areaPayments, selectedMonth, customers]);
 
   // Update cost data when month changes
   React.useEffect(() => {
@@ -162,29 +187,29 @@ const AreaCost = () => {
         month: selectedMonth,
         agents: [],
         expenses: [],
-        totalCollections: currentMonthCollections,
-        previousMonthCollections,
+        totalEarnings: currentMonthEarnings,
+        previousMonthEarnings,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       setCostData(newData);
       saveCostData(newData);
     }
-  }, [areaId, selectedMonth, currentMonthCollections, previousMonthCollections]);
+  }, [areaId, selectedMonth, currentMonthEarnings, previousMonthEarnings]);
 
-  // Update collections when they change
+  // Update earnings when they change
   React.useEffect(() => {
     if (costData) {
       const updatedData = {
         ...costData,
-        totalCollections: currentMonthCollections,
-        previousMonthCollections,
+        totalEarnings: currentMonthEarnings,
+        previousMonthEarnings,
         updatedAt: new Date().toISOString()
       };
       setCostData(updatedData);
       saveCostData(updatedData);
     }
-  }, [currentMonthCollections, previousMonthCollections]);
+  }, [currentMonthEarnings, previousMonthEarnings]);
 
   const handleAddAgent = () => {
     if (!newAgent.name.trim() || newAgent.salary <= 0) {
@@ -281,7 +306,7 @@ const AreaCost = () => {
   const totalOtherExpenses = costData?.expenses.filter(e => e.type === 'other').reduce((sum, expense) => sum + expense.amount, 0) || 0;
   const totalAgentExpenses = costData?.expenses.filter(e => e.type === 'agent').reduce((sum, expense) => sum + expense.amount, 0) || 0;
   const totalExpenses = totalAgentSalaries + totalOtherExpenses + totalAgentExpenses;
-  const netAmount = currentMonthCollections - totalExpenses;
+  const netAmount = currentMonthEarnings - totalExpenses;
 
   const exportToPdf = () => {
     const element = document.getElementById('cost-report-content');
@@ -357,9 +382,9 @@ const AreaCost = () => {
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="shadow-card border-none">
           <CardHeader className="pb-2">
-            <CardDescription>Current Month Collection</CardDescription>
+            <CardDescription>Current Month Earnings</CardDescription>
             <CardTitle className="text-3xl flex items-center text-green-600">
-              ₹{currentMonthCollections.toLocaleString()}
+              ₹{currentMonthEarnings.toLocaleString()}
               <TrendingUp className="ml-2 h-5 w-5" />
             </CardTitle>
           </CardHeader>
@@ -367,9 +392,9 @@ const AreaCost = () => {
         
         <Card className="shadow-card border-none">
           <CardHeader className="pb-2">
-            <CardDescription>Previous Month Collection</CardDescription>
+            <CardDescription>Previous Month Earnings</CardDescription>
             <CardTitle className="text-3xl flex items-center">
-              ₹{previousMonthCollections.toLocaleString()}
+              ₹{previousMonthEarnings.toLocaleString()}
               <DollarSign className="ml-2 h-5 w-5 text-muted-foreground" />
             </CardTitle>
           </CardHeader>
@@ -691,15 +716,15 @@ const AreaCost = () => {
               <CardContent className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-green-600">Collections</h3>
+                    <h3 className="text-lg font-semibold text-green-600">Earnings</h3>
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span>Current Month:</span>
-                        <span className="font-medium">₹{currentMonthCollections.toLocaleString()}</span>
+                        <span className="font-medium">₹{currentMonthEarnings.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-muted-foreground">
                         <span>Previous Month:</span>
-                        <span>₹{previousMonthCollections.toLocaleString()}</span>
+                        <span>₹{previousMonthEarnings.toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
